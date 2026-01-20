@@ -10,21 +10,21 @@ prompt_file = "prompts/orchestrator.md"
 type = "cli"
 command = "claude"
 model = "opus"
-args = ["-p", "{prompt}", "--print", "--dangerously-skip-permissions"]
+args = ["-p", "{prompt}", "--print"]
 timeout = 300
 
 [agents.claude-sonnet]
 type = "cli"
 command = "claude"
 model = "sonnet"
-args = ["-p", "{prompt}", "--print", "--dangerously-skip-permissions"]
+args = ["-p", "{prompt}", "--print"]
 timeout = 300
 
 [agents.claude-haiku]
 type = "cli"
 command = "claude"
 model = "haiku"
-args = ["-p", "{prompt}", "--print", "--dangerously-skip-permissions"]
+args = ["-p", "{prompt}", "--print"]
 timeout = 120
 
 [agents.codex]
