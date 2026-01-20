@@ -65,9 +65,16 @@ def build_cli_command(agent_config, prompt=None):
         elif agent_config["command"] == "codex":
             cmd.extend(["-m", agent_config["model"]])
 
-    if prompt:
+    if "args" in agent_config and prompt:
+        substitutions = {
+            "prompt": prompt,
+            "reasoning_effort": agent_config.get("reasoning_effort", "medium"),
+        }
+        for arg in agent_config["args"]:
+            cmd.append(arg.format(**substitutions))
+    elif prompt:
         if agent_config["command"] == "claude":
-            cmd.extend(["-p", prompt, "--print"])
+            cmd.extend(["-p", prompt, "--print", "--dangerously-skip-permissions"])
         elif agent_config["command"] == "codex":
             cmd.extend(["exec", prompt, "--full-auto"])
 

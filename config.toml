@@ -30,22 +30,17 @@ timeout = 120
 [agents.codex]
 type = "cli"
 command = "codex"
-model = "codex"                 # -m codex
-args = ["exec", "{prompt}", "--full-auto"]
-timeout = 300
-
-[agents.codex-gpt4o]
-type = "cli"
-command = "codex"
-model = "gpt-4o"                # -m gpt-4o
-args = ["exec", "{prompt}", "--full-auto"]
+model = "gpt-5.2"
+reasoning_effort = "medium"
+args = ["exec", "{prompt}", "--full-auto", "--skip-git-repo-check", "-c", "model_reasoning_effort=\"{reasoning_effort}\""]
 timeout = 300
 
 [agents.codex-gpt5]
 type = "cli"
 command = "codex"
-model = "gpt-5.2"               # -m gpt-5.2
-args = ["exec", "{prompt}", "--full-auto"]
+model = "gpt-5.2"
+reasoning_effort = "high"
+args = ["exec", "{prompt}", "--full-auto", "--skip-git-repo-check", "-c", "model_reasoning_effort=\"{reasoning_effort}\""]
 timeout = 300
 
 # === 역할별 설정 (에이전트+모델 조합 선택!) ===
