@@ -1,130 +1,126 @@
-# === 오케스트레이터 설정 ===
+# Brainchain Configuration
+
+# === Orchestrator ===
 [orchestrator]
-agent = "claude-opus"           # 메인 CLI로 열릴 에이전트
+agent = "claude-opus"
 prompt_file = "prompts/orchestrator.md"
 
-# === 에이전트 정의 (CLI 방식) ===
-# 모델별로 에이전트를 정의하면 역할별 모델 선택 가능!
+# === Agents (CLI adapters) ===
 
-# Claude Opus - High (계획, 복잡한 분석)
+# Claude Opus - High effort (planning, complex analysis)
 [agents.claude-opus-high]
-type = "cli"
 command = "claude"
 model = "opus"
 args = ["-p", "{prompt}", "--print"]
 timeout = 600
 
-# Claude Opus - Medium (일반 작업)
+# Claude Opus - Medium effort (general tasks)
 [agents.claude-opus]
-type = "cli"
 command = "claude"
 model = "opus"
 args = ["-p", "{prompt}", "--print"]
 timeout = 300
 
-# Claude Opus - Low (빠른 응답)
+# Claude Opus - Low effort (quick responses)
 [agents.claude-opus-low]
-type = "cli"
 command = "claude"
 model = "opus"
 args = ["-p", "{prompt}", "--print"]
 timeout = 120
 
+# Claude Sonnet
 [agents.claude-sonnet]
-type = "cli"
 command = "claude"
 model = "sonnet"
 args = ["-p", "{prompt}", "--print"]
 timeout = 300
 
-# Haiku - 문서 읽기, 요약, 빠른 처리용
+# Claude Haiku - Fast/cheap (docs, summaries)
 [agents.claude-haiku]
-type = "cli"
 command = "claude"
 model = "haiku"
 args = ["-p", "{prompt}", "--print"]
 timeout = 60
 
-# Haiku with web search (문서 검색용)
+# Claude Haiku with web search
 [agents.claude-haiku-web]
-type = "cli"
 command = "claude"
 model = "haiku"
 args = ["-p", "{prompt}", "--print", "--allowedTools", "WebSearch,WebFetch"]
 timeout = 90
 
+# Claude Opus with web search (planner)
+[agents.claude-web]
+command = "claude"
+model = "opus"
+args = ["-p", "{prompt}", "--print", "--allowedTools", "WebSearch,WebFetch"]
+timeout = 600
+
+# Codex GPT-5.2
 [agents.codex]
-type = "cli"
 command = "codex"
 model = "gpt-5.2"
 reasoning_effort = "medium"
 args = ["exec", "{prompt}", "--full-auto", "--skip-git-repo-check", "-c", "model_reasoning_effort=\"{reasoning_effort}\""]
 timeout = 300
 
+# Codex GPT-5.2 High effort
 [agents.codex-gpt5]
-type = "cli"
 command = "codex"
 model = "gpt-5.2"
 reasoning_effort = "high"
 args = ["exec", "{prompt}", "--full-auto", "--skip-git-repo-check", "-c", "model_reasoning_effort=\"{reasoning_effort}\""]
 timeout = 300
 
-# Codex for code writing (gpt-5.2-codex model)
+# Codex Coder (gpt-5.2-codex)
 [agents.codex-coder]
-type = "cli"
 command = "codex"
 model = "gpt-5.2-codex"
 reasoning_effort = "high"
 args = ["exec", "{prompt}", "--full-auto", "--skip-git-repo-check", "-c", "model_reasoning_effort=\"{reasoning_effort}\""]
 timeout = 600
 
-# Claude Opus with web search (플래너용)
-[agents.claude-web]
-type = "cli"
-command = "claude"
-model = "opus"
-args = ["-p", "{prompt}", "--print", "--allowedTools", "WebSearch,WebFetch"]
-timeout = 600
+# === Roles (agent + prompt combinations) ===
 
-# === 역할별 설정 (에이전트+모델 조합 선택!) ===
 [roles.planner]
-agent = "claude-web"           # 계획 (웹 검색 가능)
+agent = "claude-web"
 prompt_file = "prompts/planner.md"
 
 [roles.plan_validator]
-agent = "codex-gpt5"            # 검증은 Codex GPT-5.2
+agent = "codex-gpt5"
 prompt_file = "prompts/plan_validator.md"
 
 [roles.implementer]
-agent = "claude-opus-high"    # 구현 (Opus high effort)
+agent = "claude-opus-high"
 prompt_file = "prompts/implementer.md"
 
 [roles.code_reviewer]
-agent = "codex-coder"          # 리뷰 (gpt-5.2-codex)
+agent = "codex-coder"
 prompt_file = "prompts/code_reviewer.md"
 
 [roles.fixer]
-agent = "claude-opus-high"    # 수정 (Opus high effort)
+agent = "claude-opus-high"
 prompt_file = "prompts/fixer.md"
 
-# === 유틸리티 역할 (Haiku - 빠르고 저렴) ===
+# Utility roles (Haiku - fast/cheap)
 [roles.doc_reader]
-agent = "claude-haiku"        # 문서 읽기/요약
+agent = "claude-haiku"
 prompt_file = "prompts/doc_reader.md"
 
 [roles.db_reader]
-agent = "claude-haiku"        # SQLite/DB 읽기
+agent = "claude-haiku"
 prompt_file = "prompts/db_reader.md"
 
 [roles.summarizer]
-agent = "claude-haiku"        # 컨텍스트 요약 (압축용)
+agent = "claude-haiku"
 prompt_file = "prompts/summarizer.md"
 
 [roles.researcher]
-agent = "claude-haiku-web"    # 웹 검색 + 문서 수집
+agent = "claude-haiku-web"
 prompt_file = "prompts/researcher.md"
 
-# === 워크플로우 ===
+# === Workflow ===
+
 [[workflow.steps]]
 role = "planner"
 output = "plan.json"
@@ -148,58 +144,35 @@ on_fail = "goto:fixer"
 role = "fixer"
 on_success = "goto:code_reviewer"
 
-# === 기타 설정 ===
+# === Execution Settings ===
+
 [retry_policy]
 max_retries = 3
 retry_delay = 5
 
-[judge]
-# AI-based verification (language-agnostic)
-# code_reviewer role handles all verification:
-# - Spec compliance
-# - Test coverage (if tests exist)
-# - Scope compliance (only assigned files modified)
-# - Code quality (patterns, bugs, security)
-# No hardcoded test commands - user's project determines testing approach
-agent = "code_reviewer"
-verify_scope = true       # Check git diff for file ownership violations
-verify_specs = true       # Check implementation matches specs
+[parallel]
+max_workers = 5
 
-# === 플러그인 시스템 ===
-[plugins]
+# === Session Management ===
+
+[session]
 enabled = true
-# 플러그인 검색 경로 (추가 가능)
-# paths = ["~/.config/brainchain/plugins", "./brainchain_plugins"]
+auto_save = true
+retention_days = 30
+# db_path = "~/.config/brainchain/sessions.db"
 
-# 로드할 플러그인 (비어있으면 자동 검색)
-# load = ["my_plugin", "another_plugin"]
+[session.recovery]
+auto_detect = true
+prompt_resume = true
 
-# 비활성화할 플러그인
-# disabled = ["unwanted_plugin"]
+# === MCP (Model Context Protocol) ===
+# Optional: Enable MCP servers for enhanced capabilities
 
-# === TUI 설정 ===
-[tui]
-theme = "default"           # default, ocean, forest, mono, sunset
-show_sidebar = true         # 파일 트리 사이드바 표시
-show_timestamps = true      # 메시지 타임스탬프 표시
+[mcp]
+enabled = false
+connect_timeout = 10
 
-# 키바인딩 (Neovim 스타일)
-[tui.keybindings]
-# 탭 이동: Shift+H (이전), Shift+L (다음), 숫자키 (직접 이동)
-# prev_tab = "H"
-# next_tab = "L"
-# toggle_sidebar = "ctrl+b"
-# command_palette = "ctrl+p"
-# new_session = "ctrl+t"
-# quit = "ctrl+q"
-
-# === 어댑터 설정 ===
-# CLI 도구별 기본 설정
-[adapters.claude]
-enabled = true
-# command = "claude"        # 기본 커맨드 오버라이드
-# timeout = 300
-
-[adapters.codex]
-enabled = true
-skip_git = true
+# Example MCP server configuration:
+# [mcp.servers.filesystem]
+# enabled = true
+# command = ["npx", "-y", "@anthropics/mcp-server-filesystem", "/path/to/dir"]
