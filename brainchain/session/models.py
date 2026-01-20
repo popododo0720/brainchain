@@ -34,6 +34,14 @@ class Session:
     initial_prompt: str
     cwd: str
     config_snapshot: dict[str, Any]
+    # Session naming fields
+    name: str | None = None          # User-specified name
+    auto_name: str | None = None     # Auto-generated name from prompt
+
+    @property
+    def display_name(self) -> str:
+        """Get display name with priority: name > auto_name > id[:8]."""
+        return self.name or self.auto_name or self.id[:8]
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -46,6 +54,8 @@ class Session:
             "initial_prompt": self.initial_prompt,
             "cwd": self.cwd,
             "config_snapshot": self.config_snapshot,
+            "name": self.name,
+            "auto_name": self.auto_name,
         }
 
     @classmethod
@@ -60,6 +70,8 @@ class Session:
             initial_prompt=data["initial_prompt"],
             cwd=data["cwd"],
             config_snapshot=data.get("config_snapshot", {}),
+            name=data.get("name"),
+            auto_name=data.get("auto_name"),
         )
 
     @classmethod
@@ -74,6 +86,8 @@ class Session:
             initial_prompt=row[5],
             cwd=row[6],
             config_snapshot=json.loads(row[7]) if row[7] else {},
+            name=row[8] if len(row) > 8 else None,
+            auto_name=row[9] if len(row) > 9 else None,
         )
 
 

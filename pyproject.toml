@@ -1,6 +1,6 @@
 [project]
 name = "brainchain"
-version = "0.2.0"
+version = "0.3.0"
 description = "Multi-CLI AI Orchestrator with workflow automation"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -36,20 +36,28 @@ lsp = [
     "ast-grep-py>=0.31.0",
 ]
 
+# TUI dashboard with textual
+tui = [
+    "textual>=0.50.0",
+    "rich>=13.0.0",
+]
+
 # All optional features
 all = [
     "mcp>=1.0.0",
     "pygls>=1.3.0",
     "lsprotocol>=2024.0.0",
     "ast-grep-py>=0.31.0",
+    "textual>=0.50.0",
+    "rich>=13.0.0",
 ]
 
 [project.scripts]
 brainchain = "brainchain.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/brainchain/brainchain"
-Repository = "https://github.com/brainchain/brainchain"
+Homepage = "https://github.com/popododo0720/brainchain"
+Repository = "https://github.com/popododo0720/brainchain"
 
 [build-system]
 requires = ["hatchling"]

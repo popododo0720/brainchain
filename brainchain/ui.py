@@ -390,3 +390,116 @@ class ProgressUI:
         if self.verbose:
             c = self.colors
             self._write(f"{c.MUTED}[debug] {message}{c.RESET}")
+
+    # === Context status methods ===
+
+    def show_context_status(self, usage_percent: float, model: str = "") -> None:
+        """
+        Display context usage status.
+
+        Args:
+            usage_percent: Context usage as percentage (0-100)
+            model: Optional model name
+        """
+        c = self.colors
+        width = 10
+        filled = int(width * usage_percent / 100)
+        empty = width - filled
+
+        bar = "█" * filled + "░" * empty
+
+        # Color based on usage
+        if usage_percent >= 95:
+            bar_color = c.RED
+            status = "CRITICAL"
+        elif usage_percent >= 85:
+            bar_color = c.YELLOW
+            status = "HIGH"
+        elif usage_percent >= 70:
+            bar_color = c.INFO
+            status = "MODERATE"
+        else:
+            bar_color = c.GREEN
+            status = "OK"
+
+        model_str = f" ({model})" if model else ""
+        self._write(
+            f"Context: [{bar_color}{bar}{c.RESET}] {usage_percent:.0f}% {status}{model_str}"
+        )
+
+    def show_compression_notice(self, action: str, details: str = "") -> None:
+        """
+        Display compression action notice.
+
+        Args:
+            action: Type of action (remind, compress, compact)
+            details: Optional details
+        """
+        c = self.colors
+        s = self.symbols
+
+        if action == "remind":
+            self._write(
+                f"{c.INFO}{s.BULLET} Context at 70% - still plenty of headroom{c.RESET}"
+            )
+        elif action == "compress":
+            self._write(
+                f"{c.YELLOW}{s.SPINNER} Compressing old messages...{c.RESET}"
+            )
+            if details:
+                self._write(f"  {c.MUTED}{details}{c.RESET}")
+        elif action == "compact":
+            self._write(
+                f"{c.WARNING}{s.ARROW} Compacting session (context full){c.RESET}"
+            )
+            if details:
+                self._write(f"  {c.MUTED}{details}{c.RESET}")
+
+    def show_session_header(
+        self,
+        session_name: str,
+        tasks_done: int = 0,
+        tasks_total: int = 0,
+        context_percent: float = 0,
+        elapsed_time: str = "",
+    ) -> None:
+        """
+        Display session header bar.
+
+        Args:
+            session_name: Name of current session
+            tasks_done: Completed task count
+            tasks_total: Total task count
+            context_percent: Context usage percentage
+            elapsed_time: Elapsed time string
+        """
+        c = self.colors
+        s = self.symbols
+
+        parts = []
+
+        # Session name
+        parts.append(f"📁 {session_name}")
+
+        # Progress
+        if tasks_total > 0:
+            width = 8
+            filled = int(width * tasks_done / tasks_total)
+            bar = "█" * filled + "░" * (width - filled)
+            parts.append(f"{bar} {tasks_done}/{tasks_total}")
+
+        # Context
+        if context_percent > 0:
+            parts.append(f"🧠 {context_percent:.0f}%")
+
+        # Time
+        if elapsed_time:
+            parts.append(f"⏱ {elapsed_time}")
+
+        content = " │ ".join(parts)
+
+        # Draw box
+        width = max(len(content) + 4, 50)
+        self._write(f"┌─ 🧠 Brainchain {'─' * (width - 17)}┐")
+        self._write(f"│ {content}{' ' * (width - len(content) - 3)}│")
+        self._write(f"└{'─' * (width - 1)}┘")

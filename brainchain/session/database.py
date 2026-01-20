@@ -15,7 +15,7 @@ from .models import Message, Session, SessionStatus, ToolInvocation, WorkflowSta
 
 
 # Schema version for migrations
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA_SQL = """
 -- Sessions table
@@ -27,8 +27,14 @@ CREATE TABLE IF NOT EXISTS sessions (
     workflow_name TEXT,
     initial_prompt TEXT NOT NULL,
     cwd TEXT NOT NULL,
-    config_snapshot TEXT NOT NULL
+    config_snapshot TEXT NOT NULL,
+    name TEXT,
+    auto_name TEXT
 );
+
+-- Migration v2: Add name columns (for existing DBs)
+-- ALTER TABLE sessions ADD COLUMN name TEXT;
+-- ALTER TABLE sessions ADD COLUMN auto_name TEXT;
 
 -- Messages table
 CREATE TABLE IF NOT EXISTS messages (
@@ -100,12 +106,38 @@ class SessionDatabase:
         with self._connection() as conn:
             conn.executescript(SCHEMA_SQL)
 
+            # Check and run migrations
+            self._run_migrations(conn)
+
             # Store schema version
             conn.execute(
                 "INSERT OR REPLACE INTO schema_info (key, value) VALUES (?, ?)",
                 ("schema_version", str(SCHEMA_VERSION))
             )
             conn.commit()
+
+    def _run_migrations(self, conn: sqlite3.Connection) -> None:
+        """Run any pending migrations."""
+        # Get current version
+        try:
+            cursor = conn.execute(
+                "SELECT value FROM schema_info WHERE key = 'schema_version'"
+            )
+            row = cursor.fetchone()
+            current_version = int(row[0]) if row else 0
+        except sqlite3.OperationalError:
+            current_version = 0
+
+        # Migration v1 -> v2: Add name columns
+        if current_version < 2:
+            try:
+                conn.execute("ALTER TABLE sessions ADD COLUMN name TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+            try:
+                conn.execute("ALTER TABLE sessions ADD COLUMN auto_name TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
@@ -125,8 +157,8 @@ class SessionDatabase:
             conn.execute(
                 """
                 INSERT INTO sessions
-                (id, created_at, updated_at, status, workflow_name, initial_prompt, cwd, config_snapshot)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (id, created_at, updated_at, status, workflow_name, initial_prompt, cwd, config_snapshot, name, auto_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session.id,
@@ -137,9 +169,41 @@ class SessionDatabase:
                     session.initial_prompt,
                     session.cwd,
                     json.dumps(session.config_snapshot),
+                    session.name,
+                    session.auto_name,
                 ),
             )
             conn.commit()
+
+    def update_session_name(
+        self,
+        session_id: str,
+        name: str | None = None,
+        auto_name: str | None = None,
+    ) -> None:
+        """Update session name."""
+        with self._connection() as conn:
+            updates = []
+            values = []
+
+            if name is not None:
+                updates.append("name = ?")
+                values.append(name)
+
+            if auto_name is not None:
+                updates.append("auto_name = ?")
+                values.append(auto_name)
+
+            if updates:
+                updates.append("updated_at = ?")
+                values.append(datetime.now().isoformat())
+                values.append(session_id)
+
+                conn.execute(
+                    f"UPDATE sessions SET {', '.join(updates)} WHERE id = ?",
+                    values,
+                )
+                conn.commit()
 
     def get_session(self, session_id: str) -> Session | None:
         """Get a session by ID."""
