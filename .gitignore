@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.orchestrator_context.md
+specs/
+plan.json
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.venv/
+venv/

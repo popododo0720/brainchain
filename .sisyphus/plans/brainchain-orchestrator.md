@@ -184,7 +184,7 @@ Phase 4: E2E 테스트
 
 ## TODOs
 
-- [ ] 0. CLI 환경 검증 및 프로젝트 셋업
+- [x] 0. CLI 환경 검증 및 프로젝트 셋업
 
   **What to do**:
   - `claude --version`, `codex --version` 실행 확인
@@ -208,7 +208,7 @@ Phase 4: E2E 테스트
 
 ---
 
-- [ ] 1. config.toml + brainchain.py 작성
+- [x] 1. config.toml + brainchain.py 작성
 
   **What to do**:
   - `config.toml` 작성 (에이전트 정의, 역할 매핑)
@@ -839,7 +839,7 @@ Phase 4: E2E 테스트
 
 ---
 
-- [ ] 2. 오케스트레이터 프롬프트 작성 (orchestrator.md)
+- [x] 2. 오케스트레이터 프롬프트 작성 (orchestrator.md)
 
   **What to do**:
   - `prompts/orchestrator.md`: 메인 오케스트레이터 프롬프트
@@ -893,7 +893,7 @@ Phase 4: E2E 테스트
 
 ---
 
-- [ ] 3. 역할별 프롬프트 작성
+- [x] 3. 역할별 프롬프트 작성
 
   **What to do**:
   - `prompts/planner.md`: 계획 생성 프롬프트
@@ -945,7 +945,7 @@ Phase 4: E2E 테스트
 
 ---
 
-- [ ] 4. E2E 테스트
+- [x] 4. E2E 테스트
 
   **What to do**:
   - `python brainchain.py` 실행

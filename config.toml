@@ -9,22 +9,22 @@ prompt_file = "prompts/orchestrator.md"
 [agents.claude-opus]
 type = "cli"
 command = "claude"
-model = "opus"                  # --model opus (비싼 작업용)
-args = ["-p", "{prompt}", "--print", "--allowedTools", "Edit,Write,Bash"]
+model = "opus"
+args = ["-p", "{prompt}", "--print", "--dangerously-skip-permissions"]
 timeout = 300
 
 [agents.claude-sonnet]
 type = "cli"
 command = "claude"
-model = "sonnet"                # --model sonnet (균형)
-args = ["-p", "{prompt}", "--print", "--allowedTools", "Edit,Write,Bash"]
+model = "sonnet"
+args = ["-p", "{prompt}", "--print", "--dangerously-skip-permissions"]
 timeout = 300
 
 [agents.claude-haiku]
 type = "cli"
 command = "claude"
-model = "haiku"                 # --model haiku (저렴한 작업용)
-args = ["-p", "{prompt}", "--print", "--allowedTools", "Edit,Write,Bash"]
+model = "haiku"
+args = ["-p", "{prompt}", "--print", "--dangerously-skip-permissions"]
 timeout = 120
 
 [agents.codex]
@@ -99,5 +99,13 @@ max_retries = 3
 retry_delay = 5
 
 [judge]
-test_command = "pytest"
-build_command = "python -m py_compile"
+# AI-based verification (language-agnostic)
+# code_reviewer role handles all verification:
+# - Spec compliance
+# - Test coverage (if tests exist)
+# - Scope compliance (only assigned files modified)
+# - Code quality (patterns, bugs, security)
+# No hardcoded test commands - user's project determines testing approach
+agent = "code_reviewer"
+verify_scope = true       # Check git diff for file ownership violations
+verify_specs = true       # Check implementation matches specs
