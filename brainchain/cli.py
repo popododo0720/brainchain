@@ -151,6 +151,29 @@ Config: {get_config_dir()}
         metavar="SESSION_ID",
         help="Show detailed session information",
     )
+    parser.add_argument(
+        "--name", "-n",
+        metavar="NAME",
+        help="Session name (for --workflow or --exec)",
+    )
+    parser.add_argument(
+        "--rename",
+        nargs=2,
+        metavar=("SESSION_ID", "NAME"),
+        help="Rename an existing session",
+    )
+
+    # TUI mode
+    parser.add_argument(
+        "--tui",
+        action="store_true",
+        help="Launch interactive TUI dashboard",
+    )
+    parser.add_argument(
+        "--theme",
+        metavar="NAME",
+        help="TUI theme (default, ocean, forest, mono, sunset)",
+    )
 
     # MCP tools
     parser.add_argument(
@@ -473,6 +496,68 @@ def cmd_session_info(
         print(f"Completed Steps: {len(workflow_state['step_results'])}")
 
     return 0
+
+
+def cmd_rename(
+    args: argparse.Namespace,
+    config: dict,
+    ui: ProgressUI,
+) -> int:
+    """Handle --rename command."""
+    session_id, new_name = args.rename
+
+    session_config = get_session_config(config)
+    manager = SessionManager(
+        db_path=session_config.get("db_path"),
+        enabled=session_config.get("enabled", True),
+    )
+
+    # Check if session exists
+    session = manager.get_session(session_id)
+    if not session:
+        ui.error(f"Session not found: {session_id}")
+        return 1
+
+    # Update name
+    manager.db.update_session_name(session_id, name=new_name)
+
+    if args.json:
+        print(json.dumps({
+            "success": True,
+            "session_id": session_id,
+            "name": new_name,
+        }, indent=2))
+    else:
+        ui.success(f"Renamed session {session_id[:8]} to '{new_name}'")
+
+    return 0
+
+
+def cmd_tui(
+    args: argparse.Namespace,
+    config: dict,
+    ui: ProgressUI,
+) -> int:
+    """Handle --tui command."""
+    try:
+        from .tui import TEXTUAL_AVAILABLE, BrainchainApp
+    except ImportError:
+        ui.error("TUI not available. Install with: pip install brainchain[tui]")
+        return 1
+
+    if not TEXTUAL_AVAILABLE:
+        ui.error("Textual not installed. Install with: pip install brainchain[tui]")
+        return 1
+
+    theme = args.theme or "default"
+
+    try:
+        app = BrainchainApp(theme_name=theme)
+        app.run()
+        return 0
+    except Exception as e:
+        ui.error(f"TUI error: {e}")
+        return 1
 
 
 def cmd_resume(
@@ -906,6 +991,14 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.session_info:
         return cmd_session_info(args, config, ui)
+
+    # Session rename
+    if args.rename:
+        return cmd_rename(args, config, ui)
+
+    # TUI mode
+    if args.tui:
+        return cmd_tui(args, config, ui)
 
     # MCP commands (don't need prompts)
     if args.mcp_list:
