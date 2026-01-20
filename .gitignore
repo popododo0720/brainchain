@@ -10,3 +10,8 @@ build/
 .pytest_cache/
 .venv/
 venv/
+
+# Go binaries
+cmd/chat/brainchain
+cmd/chat/chat
+*.exe
