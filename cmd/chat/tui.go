@@ -289,6 +289,7 @@ func runTUI() error {
 	p := tea.NewProgram(
 		newTUIModel(),
 		tea.WithAltScreen(),
+		tea.WithInputTTY(),
 	)
 
 	_, err := p.Run()
