@@ -6,12 +6,32 @@ prompt_file = "prompts/orchestrator.md"
 # === 에이전트 정의 (CLI 방식) ===
 # 모델별로 에이전트를 정의하면 역할별 모델 선택 가능!
 
+# Claude Opus - High effort (계획, 복잡한 분석)
+[agents.claude-opus-high]
+type = "cli"
+command = "claude"
+model = "opus"
+effort = "high"
+args = ["-p", "{prompt}", "--print", "--effort", "high"]
+timeout = 600
+
+# Claude Opus - Medium effort (일반 작업)
 [agents.claude-opus]
 type = "cli"
 command = "claude"
 model = "opus"
-args = ["-p", "{prompt}", "--print"]
+effort = "medium"
+args = ["-p", "{prompt}", "--print", "--effort", "medium"]
 timeout = 300
+
+# Claude Opus - Low effort (빠른 응답)
+[agents.claude-opus-low]
+type = "cli"
+command = "claude"
+model = "opus"
+effort = "low"
+args = ["-p", "{prompt}", "--print", "--effort", "low"]
+timeout = 120
 
 [agents.claude-sonnet]
 type = "cli"
@@ -20,12 +40,21 @@ model = "sonnet"
 args = ["-p", "{prompt}", "--print"]
 timeout = 300
 
+# Haiku - 문서 읽기, 요약, 빠른 처리용
 [agents.claude-haiku]
 type = "cli"
 command = "claude"
 model = "haiku"
 args = ["-p", "{prompt}", "--print"]
-timeout = 120
+timeout = 60
+
+# Haiku with web search (문서 검색용)
+[agents.claude-haiku-web]
+type = "cli"
+command = "claude"
+model = "haiku"
+args = ["-p", "{prompt}", "--print", "--allowedTools", "WebSearch,WebFetch"]
+timeout = 90
 
 [agents.codex]
 type = "cli"
@@ -52,13 +81,14 @@ reasoning_effort = "high"
 args = ["exec", "{prompt}", "--full-auto", "--skip-git-repo-check", "-c", "model_reasoning_effort=\"{reasoning_effort}\""]
 timeout = 600
 
-# Claude with web search enabled
+# Claude Opus with web search + high effort (플래너용)
 [agents.claude-web]
 type = "cli"
 command = "claude"
 model = "opus"
-args = ["-p", "{prompt}", "--print", "--allowedTools", "WebSearch,WebFetch"]
-timeout = 300
+effort = "high"
+args = ["-p", "{prompt}", "--print", "--allowedTools", "WebSearch,WebFetch", "--effort", "high"]
+timeout = 600
 
 # === 역할별 설정 (에이전트+모델 조합 선택!) ===
 [roles.planner]
@@ -80,6 +110,23 @@ prompt_file = "prompts/code_reviewer.md"
 [roles.fixer]
 agent = "codex-coder"         # 수정 (gpt-5.2-codex)
 prompt_file = "prompts/fixer.md"
+
+# === 유틸리티 역할 (Haiku - 빠르고 저렴) ===
+[roles.doc_reader]
+agent = "claude-haiku"        # 문서 읽기/요약
+prompt_file = "prompts/doc_reader.md"
+
+[roles.db_reader]
+agent = "claude-haiku"        # SQLite/DB 읽기
+prompt_file = "prompts/db_reader.md"
+
+[roles.summarizer]
+agent = "claude-haiku"        # 컨텍스트 요약 (압축용)
+prompt_file = "prompts/summarizer.md"
+
+[roles.researcher]
+agent = "claude-haiku-web"    # 웹 검색 + 문서 수집
+prompt_file = "prompts/researcher.md"
 
 # === 워크플로우 ===
 [[workflow.steps]]
