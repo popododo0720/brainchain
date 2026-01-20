@@ -78,7 +78,8 @@ func (m *tuiModel) sendMessage(input string) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 
-		result, err := m.adapter.Run(ctx, input, "", nil)
+		cwd, _ := os.Getwd()
+		result, err := m.adapter.Run(ctx, input, cwd, nil)
 		if err != nil {
 			return streamErrorMsg(err.Error())
 		}
