@@ -100,7 +100,7 @@ agent = "codex-gpt5"            # 검증은 Codex GPT-5.2
 prompt_file = "prompts/plan_validator.md"
 
 [roles.implementer]
-agent = "codex-coder"         # 구현 (gpt-5.2-codex)
+agent = "claude-opus-high"    # 구현 (Opus high effort)
 prompt_file = "prompts/implementer.md"
 
 [roles.code_reviewer]
@@ -108,7 +108,7 @@ agent = "codex-coder"          # 리뷰 (gpt-5.2-codex)
 prompt_file = "prompts/code_reviewer.md"
 
 [roles.fixer]
-agent = "codex-coder"         # 수정 (gpt-5.2-codex)
+agent = "claude-opus-high"    # 수정 (Opus high effort)
 prompt_file = "prompts/fixer.md"
 
 # === 유틸리티 역할 (Haiku - 빠르고 저렴) ===
