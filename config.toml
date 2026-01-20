@@ -1,0 +1,103 @@
+# === 오케스트레이터 설정 ===
+[orchestrator]
+agent = "claude-opus"           # 메인 CLI로 열릴 에이전트
+prompt_file = "prompts/orchestrator.md"
+
+# === 에이전트 정의 (CLI 방식) ===
+# 모델별로 에이전트를 정의하면 역할별 모델 선택 가능!
+
+[agents.claude-opus]
+type = "cli"
+command = "claude"
+model = "opus"                  # --model opus (비싼 작업용)
+args = ["-p", "{prompt}", "--print", "--allowedTools", "Edit,Write,Bash"]
+timeout = 300
+
+[agents.claude-sonnet]
+type = "cli"
+command = "claude"
+model = "sonnet"                # --model sonnet (균형)
+args = ["-p", "{prompt}", "--print", "--allowedTools", "Edit,Write,Bash"]
+timeout = 300
+
+[agents.claude-haiku]
+type = "cli"
+command = "claude"
+model = "haiku"                 # --model haiku (저렴한 작업용)
+args = ["-p", "{prompt}", "--print", "--allowedTools", "Edit,Write,Bash"]
+timeout = 120
+
+[agents.codex]
+type = "cli"
+command = "codex"
+model = "codex"                 # -m codex
+args = ["exec", "{prompt}", "--full-auto"]
+timeout = 300
+
+[agents.codex-gpt4o]
+type = "cli"
+command = "codex"
+model = "gpt-4o"                # -m gpt-4o
+args = ["exec", "{prompt}", "--full-auto"]
+timeout = 300
+
+[agents.codex-gpt5]
+type = "cli"
+command = "codex"
+model = "gpt-5.2"               # -m gpt-5.2
+args = ["exec", "{prompt}", "--full-auto"]
+timeout = 300
+
+# === 역할별 설정 (에이전트+모델 조합 선택!) ===
+[roles.planner]
+agent = "claude-opus"           # 계획
+prompt_file = "prompts/planner.md"
+
+[roles.plan_validator]
+agent = "codex-gpt5"            # 검증은 Codex GPT-5.2
+prompt_file = "prompts/plan_validator.md"
+
+[roles.implementer]
+agent = "claude-opus"         # 구현
+prompt_file = "prompts/implementer.md"
+
+[roles.code_reviewer]
+agent = "codex-gpt5"          # 리뷰
+prompt_file = "prompts/code_reviewer.md"
+
+[roles.fixer]
+agent = "claude-opus"         # 수정
+prompt_file = "prompts/fixer.md"
+
+# === 워크플로우 ===
+[[workflow.steps]]
+role = "planner"
+output = "plan.json"
+
+[[workflow.steps]]
+role = "plan_validator"
+input = "plan.json"
+on_fail = "goto:planner"
+
+[[workflow.steps]]
+role = "implementer"
+input = "plan.json"
+per_task = true
+
+[[workflow.steps]]
+role = "code_reviewer"
+per_task = true
+on_fail = "goto:fixer"
+
+[[workflow.steps]]
+role = "fixer"
+on_success = "goto:code_reviewer"
+
+# === 기타 설정 ===
+[retry_policy]
+max_retries = 3
+retry_delay = 5
+
+[judge]
+test_command = "pytest"
+build_command = "python -m py_compile"
