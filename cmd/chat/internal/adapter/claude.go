@@ -13,7 +13,7 @@ func NewClaudeAdapter(cfg *Config) *ClaudeAdapter {
 	if cfg == nil {
 		defaultCfg := Config{
 			Command: "claude",
-			Args:    []string{"-p", "{prompt}", "--print"},
+			Args:    []string{"-p", "{prompt}", "--print", "--dangerously-skip-permissions"},
 			Timeout: 5 * time.Minute,
 			Extra:   map[string]any{},
 		}
@@ -72,7 +72,7 @@ type ClaudeSonnetAdapter struct {
 func NewClaudeSonnetAdapter() *ClaudeSonnetAdapter {
 	cfg := Config{
 		Command: "claude",
-		Args:    []string{"-p", "{prompt}", "--print"},
+		Args:    []string{"-p", "{prompt}", "--print", "--dangerously-skip-permissions"},
 		Timeout: 5 * time.Minute,
 		Extra:   map[string]any{"model": "sonnet"},
 	}
@@ -95,7 +95,7 @@ type ClaudeOpusAdapter struct {
 func NewClaudeOpusAdapter() *ClaudeOpusAdapter {
 	cfg := Config{
 		Command: "claude",
-		Args:    []string{"-p", "{prompt}", "--print"},
+		Args:    []string{"-p", "{prompt}", "--print", "--dangerously-skip-permissions"},
 		Timeout: 5 * time.Minute,
 		Extra:   map[string]any{"model": "opus"},
 	}
@@ -118,7 +118,7 @@ type ClaudeHaikuAdapter struct {
 func NewClaudeHaikuAdapter() *ClaudeHaikuAdapter {
 	cfg := Config{
 		Command: "claude",
-		Args:    []string{"-p", "{prompt}", "--print"},
+		Args:    []string{"-p", "{prompt}", "--print", "--dangerously-skip-permissions"},
 		Timeout: 5 * time.Minute,
 		Extra:   map[string]any{"model": "haiku"},
 	}

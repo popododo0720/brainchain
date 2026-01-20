@@ -11,49 +11,49 @@ prompt_file = "prompts/orchestrator.md"
 [agents.claude-opus-high]
 command = "claude"
 model = "opus"
-args = ["-p", "{prompt}", "--print"]
+args = ["-p", "{prompt}", "--print", "--dangerously-skip-permissions"]
 timeout = 600
 
 # Claude Opus - Medium effort (general tasks)
 [agents.claude-opus]
 command = "claude"
 model = "opus"
-args = ["-p", "{prompt}", "--print"]
+args = ["-p", "{prompt}", "--print", "--dangerously-skip-permissions"]
 timeout = 300
 
 # Claude Opus - Low effort (quick responses)
 [agents.claude-opus-low]
 command = "claude"
 model = "opus"
-args = ["-p", "{prompt}", "--print"]
+args = ["-p", "{prompt}", "--print", "--dangerously-skip-permissions"]
 timeout = 120
 
 # Claude Sonnet
 [agents.claude-sonnet]
 command = "claude"
 model = "sonnet"
-args = ["-p", "{prompt}", "--print"]
+args = ["-p", "{prompt}", "--print", "--dangerously-skip-permissions"]
 timeout = 300
 
 # Claude Haiku - Fast/cheap (docs, summaries)
 [agents.claude-haiku]
 command = "claude"
 model = "haiku"
-args = ["-p", "{prompt}", "--print"]
+args = ["-p", "{prompt}", "--print", "--dangerously-skip-permissions"]
 timeout = 60
 
 # Claude Haiku with web search
 [agents.claude-haiku-web]
 command = "claude"
 model = "haiku"
-args = ["-p", "{prompt}", "--print", "--allowedTools", "WebSearch,WebFetch"]
+args = ["-p", "{prompt}", "--print", "--dangerously-skip-permissions", "--allowedTools", "WebSearch,WebFetch"]
 timeout = 90
 
 # Claude Opus with web search (planner)
 [agents.claude-web]
 command = "claude"
 model = "opus"
-args = ["-p", "{prompt}", "--print", "--allowedTools", "WebSearch,WebFetch"]
+args = ["-p", "{prompt}", "--print", "--dangerously-skip-permissions", "--allowedTools", "WebSearch,WebFetch"]
 timeout = 600
 
 # Codex GPT-5.2
