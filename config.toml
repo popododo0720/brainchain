@@ -6,31 +6,28 @@ prompt_file = "prompts/orchestrator.md"
 # === 에이전트 정의 (CLI 방식) ===
 # 모델별로 에이전트를 정의하면 역할별 모델 선택 가능!
 
-# Claude Opus - High effort (계획, 복잡한 분석)
+# Claude Opus - High (계획, 복잡한 분석)
 [agents.claude-opus-high]
 type = "cli"
 command = "claude"
 model = "opus"
-effort = "high"
-args = ["-p", "{prompt}", "--print", "--effort", "high"]
+args = ["-p", "{prompt}", "--print"]
 timeout = 600
 
-# Claude Opus - Medium effort (일반 작업)
+# Claude Opus - Medium (일반 작업)
 [agents.claude-opus]
 type = "cli"
 command = "claude"
 model = "opus"
-effort = "medium"
-args = ["-p", "{prompt}", "--print", "--effort", "medium"]
+args = ["-p", "{prompt}", "--print"]
 timeout = 300
 
-# Claude Opus - Low effort (빠른 응답)
+# Claude Opus - Low (빠른 응답)
 [agents.claude-opus-low]
 type = "cli"
 command = "claude"
 model = "opus"
-effort = "low"
-args = ["-p", "{prompt}", "--print", "--effort", "low"]
+args = ["-p", "{prompt}", "--print"]
 timeout = 120
 
 [agents.claude-sonnet]
@@ -81,13 +78,12 @@ reasoning_effort = "high"
 args = ["exec", "{prompt}", "--full-auto", "--skip-git-repo-check", "-c", "model_reasoning_effort=\"{reasoning_effort}\""]
 timeout = 600
 
-# Claude Opus with web search + high effort (플래너용)
+# Claude Opus with web search (플래너용)
 [agents.claude-web]
 type = "cli"
 command = "claude"
 model = "opus"
-effort = "high"
-args = ["-p", "{prompt}", "--print", "--allowedTools", "WebSearch,WebFetch", "--effort", "high"]
+args = ["-p", "{prompt}", "--print", "--allowedTools", "WebSearch,WebFetch"]
 timeout = 600
 
 # === 역할별 설정 (에이전트+모델 조합 선택!) ===
@@ -168,3 +164,42 @@ retry_delay = 5
 agent = "code_reviewer"
 verify_scope = true       # Check git diff for file ownership violations
 verify_specs = true       # Check implementation matches specs
+
+# === 플러그인 시스템 ===
+[plugins]
+enabled = true
+# 플러그인 검색 경로 (추가 가능)
+# paths = ["~/.config/brainchain/plugins", "./brainchain_plugins"]
+
+# 로드할 플러그인 (비어있으면 자동 검색)
+# load = ["my_plugin", "another_plugin"]
+
+# 비활성화할 플러그인
+# disabled = ["unwanted_plugin"]
+
+# === TUI 설정 ===
+[tui]
+theme = "default"           # default, ocean, forest, mono, sunset
+show_sidebar = true         # 파일 트리 사이드바 표시
+show_timestamps = true      # 메시지 타임스탬프 표시
+
+# 키바인딩 (Neovim 스타일)
+[tui.keybindings]
+# 탭 이동: Shift+H (이전), Shift+L (다음), 숫자키 (직접 이동)
+# prev_tab = "H"
+# next_tab = "L"
+# toggle_sidebar = "ctrl+b"
+# command_palette = "ctrl+p"
+# new_session = "ctrl+t"
+# quit = "ctrl+q"
+
+# === 어댑터 설정 ===
+# CLI 도구별 기본 설정
+[adapters.claude]
+enabled = true
+# command = "claude"        # 기본 커맨드 오버라이드
+# timeout = 300
+
+[adapters.codex]
+enabled = true
+skip_git = true

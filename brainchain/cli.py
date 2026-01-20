@@ -169,12 +169,6 @@ Config: {get_config_dir()}
         action="store_true",
         help="Launch interactive TUI dashboard",
     )
-    parser.add_argument(
-        "--theme",
-        metavar="NAME",
-        help="TUI theme (default, ocean, forest, mono, sunset)",
-    )
-
     # MCP tools
     parser.add_argument(
         "--mcp-list",
@@ -549,10 +543,8 @@ def cmd_tui(
         ui.error("Textual not installed. Install with: pip install brainchain[tui]")
         return 1
 
-    theme = args.theme or "default"
-
     try:
-        app = BrainchainApp(theme_name=theme)
+        app = BrainchainApp()
         app.run()
         return 0
     except Exception as e:
@@ -1031,21 +1023,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.resume:
         return cmd_resume(args, config, prompts, ui)
 
-    # Check for recoverable sessions before interactive mode
-    session_config = get_session_config(config)
-    if session_config.get("enabled") and session_config.get("recovery", {}).get("prompt_resume"):
-        manager = SessionManager(
-            db_path=session_config.get("db_path"),
-            enabled=True,
-        )
-        recovery = RecoveryManager(manager)
-        recoverable = recovery.check_for_recovery()
-        if recoverable:
-            prompt = recovery.format_recovery_prompt(recoverable)
-            print(prompt)
-
-    # Default: interactive mode
-    return cmd_interactive(args, config, prompts, ui)
+    # Default: TUI mode
+    return cmd_tui(args, config, ui)
 
 
 if __name__ == "__main__":
