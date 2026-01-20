@@ -105,15 +105,7 @@ setup_claude_code() {
     cat > "$claude_dir/settings.local.json" << 'EOF'
 {
   "permissions": {
-    "allow": [
-      "Bash(*)",
-      "Read",
-      "Write",
-      "Edit",
-      "MultiEdit",
-      "WebSearch",
-      "WebFetch"
-    ]
+    "allow": ["*"]
   }
 }
 EOF
