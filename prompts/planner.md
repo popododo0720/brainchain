@@ -10,12 +10,51 @@ into actionable, unambiguous work plans.
 - **File ownership**: Every file belongs to exactly ONE task. No overlaps.
 - **TDD**: Test files are part of the task scope, not afterthoughts
 
+## Library & Dependency Guidelines
+
+**CRITICAL: You have web search enabled. USE IT to verify library information!**
+
+1. **Official Documentation First**
+   - ALWAYS search for and reference official documentation
+   - Use WebSearch to find the latest stable version
+   - Include documentation links in specs
+
+2. **Version Pinning**
+   - Specify EXACT versions for all dependencies (e.g., `fastapi==0.109.0`, NOT `fastapi>=0.100`)
+   - Check PyPI/npm/etc for the current stable version
+   - Avoid pre-release versions unless explicitly requested
+
+3. **No Duplicate Libraries**
+   - Before adding a library, check if existing dependencies provide the same functionality
+   - Prefer stdlib over external packages when possible
+   - ONE library per purpose (e.g., don't mix `requests` and `httpx`)
+
+4. **Dependency Audit**
+   - List ALL new dependencies in specs with justification
+   - Check for security vulnerabilities (use `pip-audit`, `npm audit` concepts)
+   - Consider bundle size and maintenance status
+
+## Research Before Planning
+
+Before creating a plan, you MUST:
+1. WebSearch for official docs of any libraries you'll use
+2. Verify current stable versions
+3. Check if the project already has similar dependencies
+4. Look for best practices and common patterns
+
 ## Output Format
 
 Return a JSON object with this exact structure:
 
 ```json
 {
+  "dependencies": {
+    "new": [
+      {"name": "fastapi", "version": "0.109.0", "reason": "REST API framework", "docs": "https://fastapi.tiangolo.com/"}
+    ],
+    "existing": ["sqlalchemy", "pydantic"],
+    "conflicts": []
+  },
   "specs": [
     {
       "file": "specs/api.md",
@@ -23,7 +62,7 @@ Return a JSON object with this exact structure:
       "content": "## Endpoints\n\n### POST /users\n..."
     },
     {
-      "file": "specs/db.md", 
+      "file": "specs/db.md",
       "description": "Database schema",
       "content": "## Tables\n\n### users\n..."
     }
@@ -57,3 +96,7 @@ Return a JSON object with this exact structure:
 - Leave acceptance criteria vague ("it should work")
 - Skip spec generation for non-trivial features
 - Include implementation details in specs (specs define WHAT, not HOW)
+- Use libraries without checking official docs first
+- Add duplicate libraries (e.g., both requests AND httpx)
+- Use floating versions (>=, ~=) - always pin exact versions
+- Skip dependency justification in specs

@@ -43,9 +43,26 @@ reasoning_effort = "high"
 args = ["exec", "{prompt}", "--full-auto", "--skip-git-repo-check", "-c", "model_reasoning_effort=\"{reasoning_effort}\""]
 timeout = 300
 
+# Codex for code writing (gpt-5.2-codex model)
+[agents.codex-coder]
+type = "cli"
+command = "codex"
+model = "gpt-5.2-codex"
+reasoning_effort = "high"
+args = ["exec", "{prompt}", "--full-auto", "--skip-git-repo-check", "-c", "model_reasoning_effort=\"{reasoning_effort}\""]
+timeout = 600
+
+# Claude with web search enabled
+[agents.claude-web]
+type = "cli"
+command = "claude"
+model = "opus"
+args = ["-p", "{prompt}", "--print", "--allowedTools", "WebSearch,WebFetch"]
+timeout = 300
+
 # === 역할별 설정 (에이전트+모델 조합 선택!) ===
 [roles.planner]
-agent = "claude-opus"           # 계획
+agent = "claude-web"           # 계획 (웹 검색 가능)
 prompt_file = "prompts/planner.md"
 
 [roles.plan_validator]
@@ -53,15 +70,15 @@ agent = "codex-gpt5"            # 검증은 Codex GPT-5.2
 prompt_file = "prompts/plan_validator.md"
 
 [roles.implementer]
-agent = "claude-opus"         # 구현
+agent = "codex-coder"         # 구현 (gpt-5.2-codex)
 prompt_file = "prompts/implementer.md"
 
 [roles.code_reviewer]
-agent = "codex-gpt5"          # 리뷰
+agent = "codex-coder"          # 리뷰 (gpt-5.2-codex)
 prompt_file = "prompts/code_reviewer.md"
 
 [roles.fixer]
-agent = "claude-opus"         # 수정
+agent = "codex-coder"         # 수정 (gpt-5.2-codex)
 prompt_file = "prompts/fixer.md"
 
 # === 워크플로우 ===
