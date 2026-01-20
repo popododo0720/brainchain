@@ -14,21 +14,58 @@ specialized agents to complete complex development tasks efficiently.
 ```
 1. PLAN    → Generate specs + task breakdown (Planner)
 2. VALIDATE → Review plan for gaps (Validator) → Loop back if issues
-3. IMPLEMENT → Execute tasks one by one (Implementer)
+3. IMPLEMENT → Execute tasks (Implementer) - PARALLEL when possible
 4. REVIEW  → Verify implementation (Reviewer) → Loop to Fixer if issues
 5. FIX     → Address review feedback (Fixer) → Back to Review
 ```
 
 ## How to Call Other Agents
 
-Use subprocess to invoke CLI agents:
+### Single Task (Sequential)
 
 ```bash
-# Claude agent
-claude -p "<ROLE_PROMPT>\n\n<YOUR_TASK>" --print --allowedTools Edit,Write,Bash
+python brainchain.py --exec <role> "<prompt>"
+```
 
-# Codex agent  
-codex -q "<ROLE_PROMPT>\n\n<YOUR_TASK>" --approval never --full-auto
+Example:
+```bash
+python brainchain.py --exec planner "Create a plan for user authentication system"
+```
+
+### Multiple Tasks (Parallel)
+
+Create a tasks.json file:
+```json
+[
+  {"id": "task1", "role": "implementer", "prompt": "Implement user model in src/models/user.py"},
+  {"id": "task2", "role": "implementer", "prompt": "Implement auth routes in src/routes/auth.py"},
+  {"id": "task3", "role": "implementer", "prompt": "Implement tests in tests/test_auth.py"}
+]
+```
+
+Run in parallel:
+```bash
+python brainchain.py --parallel tasks.json
+```
+
+Results returned as JSON array with task IDs.
+
+## File Ownership (YOUR Responsibility)
+
+When running tasks in parallel, YOU must ensure:
+- Each task has EXCLUSIVE files - no overlap
+- Check plan for conflicts before dispatching
+- If conflict detected: run sequentially instead
+
+Example conflict check:
+```
+Task 1 files: src/models/user.py, tests/test_user.py
+Task 2 files: src/routes/auth.py, tests/test_auth.py
+→ No overlap, safe to parallelize
+
+Task 1 files: src/auth.py
+Task 2 files: src/auth.py
+→ CONFLICT! Run sequentially
 ```
 
 ## Delegation Prompt Structure (MANDATORY)
@@ -38,28 +75,33 @@ When delegating to any role, your prompt MUST include:
 | Section | Description |
 |---------|-------------|
 | **TASK** | Atomic, specific goal (one action per delegation) |
+| **FILES** | Exclusive files this task can modify |
 | **CONTEXT** | Relevant specs, file paths, existing patterns |
 | **MUST DO** | Exhaustive requirements - leave NOTHING implicit |
-| **MUST NOT DO** | Forbidden actions - anticipate and block scope creep |
-| **OUTPUT FORMAT** | Expected response structure (JSON schema if applicable) |
+| **MUST NOT DO** | Forbidden actions - block scope creep |
+| **OUTPUT FORMAT** | Expected response structure (JSON if applicable) |
 
-## File Ownership Rules (CRITICAL)
+## Parallelization Strategy
 
-- Each task has EXCLUSIVE files. No overlap between concurrent tasks.
-- Before dispatching: verify no file conflicts with `git status`
-- After completion: verify only assigned files changed with `git diff --name-only`
-- Violation = REJECT and reassign
+1. **Identify independent tasks** - no shared files
+2. **Group by dependency** - dependent tasks run sequentially
+3. **Dispatch parallel groups** - use --parallel for each group
+4. **Collect and verify** - check all results before proceeding
 
-## Role → Agent Mapping
+Example workflow:
+```
+Plan has 5 tasks:
+  Task 1: src/models/user.py (no deps)
+  Task 2: src/models/post.py (no deps)
+  Task 3: src/routes/user.py (depends on Task 1)
+  Task 4: src/routes/post.py (depends on Task 2)
+  Task 5: tests/test_all.py (depends on all)
 
-Read from config.toml. Example:
-- planner: claude
-- plan_validator: codex
-- implementer: claude
-- code_reviewer: codex
-- fixer: claude
-
-These can be swapped by changing config. Your logic should be agent-agnostic.
+Execution:
+  Round 1 (parallel): Task 1, Task 2
+  Round 2 (parallel): Task 3, Task 4
+  Round 3 (sequential): Task 5
+```
 
 ## Hard Blocks (NEVER violate)
 
@@ -67,6 +109,6 @@ These can be swapped by changing config. Your logic should be agent-agnostic.
 |------------|---------------|
 | Implement without plan | Never |
 | Skip validation step | Never |
-| Overlapping file assignments | Never |
+| Parallel tasks with overlapping files | Never |
 | Ignore reviewer feedback | Never |
 | Commit without explicit request | Never |
