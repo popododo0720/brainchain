@@ -106,8 +106,11 @@ setup_claude_code() {
 {
   "permissions": {
     "allow": [
-      "Bash(brainchain:*)",
-      "Bash(git:*)",
+      "Bash(*)",
+      "Read",
+      "Write",
+      "Edit",
+      "MultiEdit",
       "WebSearch",
       "WebFetch"
     ]
