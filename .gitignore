@@ -16,6 +16,7 @@ cmd/chat/brainchain
 cmd/chat/chat
 *.exe
 /brainchain
+brainchain
 
 # Node
 node_modules/
