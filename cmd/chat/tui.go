@@ -155,8 +155,11 @@ func startSDKStream(bridge *sdk.Bridge, prompt string, sessionID string) tea.Cmd
 		eventCh := make(chan sdk.Event, 100)
 		
 		go func() {
+			defer func() {
+				recover()
+				close(eventCh)
+			}()
 			bridge.Chat(prompt, sessionID, eventCh)
-			close(eventCh)
 		}()
 
 		return sdkEventMsg{eventCh: eventCh}
@@ -220,10 +223,10 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 
 		headerHeight := 1
-		statusBarHeight := 1
+		statusHeight := 1
 		inputHeight := 3
 		footerHeight := 1
-		viewportHeight := m.height - headerHeight - statusBarHeight - inputHeight - footerHeight
+		viewportHeight := m.height - headerHeight - statusHeight - inputHeight - footerHeight
 
 		if viewportHeight < 3 {
 			viewportHeight = 3
@@ -313,43 +316,49 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.eventCh == nil {
 			break
 		}
+
+		if !m.streaming {
+			break
+		}
 		
 		event := msg.event
-		switch event.Type {
-		case sdk.EventSystem:
-			if event.SessionID != "" {
-				m.sessionID = event.SessionID
+		if event.Type != "" {
+			switch event.Type {
+			case sdk.EventSystem:
+				if event.SessionID != "" {
+					m.sessionID = event.SessionID
+				}
+			case sdk.EventThinking:
+				m.streamThinking.Reset()
+				m.streamThinking.WriteString(event.Content)
+				m.status = "💭 Thinking..."
+			case sdk.EventReasoning:
+				m.streamReasoning.Reset()
+				m.streamReasoning.WriteString(event.Content)
+				m.status = "🧠 Reasoning..."
+			case sdk.EventText:
+				m.streamText.Reset()
+				m.streamText.WriteString(event.Content)
+				m.status = "✍️ Writing..."
+			case sdk.EventToolStart:
+				m.streamTools = append(m.streamTools, event.Name)
+				m.status = "🔧 " + event.Name
+			case sdk.EventError:
+				m.streaming = false
+				m.status = "ready"
+				m.messages = append(m.messages, chatMessage{
+					msgType: msgAssistant,
+					content: "❌ Error: " + event.Message,
+					time:    time.Now(),
+				})
+				m.viewport.SetContent(m.renderContent())
+				m.viewport.GotoBottom()
+				return m, nil
 			}
-		case sdk.EventThinking:
-			m.streamThinking.Reset()
-			m.streamThinking.WriteString(event.Content)
-			m.status = "💭 Thinking..."
-		case sdk.EventReasoning:
-			m.streamReasoning.Reset()
-			m.streamReasoning.WriteString(event.Content)
-			m.status = "🧠 Reasoning..."
-		case sdk.EventText:
-			m.streamText.Reset()
-			m.streamText.WriteString(event.Content)
-			m.status = "✍️ Writing..."
-		case sdk.EventToolStart:
-			m.streamTools = append(m.streamTools, event.Name)
-			m.status = "🔧 " + event.Name
-		case sdk.EventError:
-			m.streaming = false
-			m.status = "ready"
-			m.messages = append(m.messages, chatMessage{
-				msgType: msgAssistant,
-				content: "❌ Error: " + event.Message,
-				time:    time.Now(),
-			})
+
 			m.viewport.SetContent(m.renderContent())
 			m.viewport.GotoBottom()
-			return m, nil
 		}
-
-		m.viewport.SetContent(m.renderContent())
-		m.viewport.GotoBottom()
 		return m, waitForSDKEvent(msg.eventCh)
 
 	case streamEvent:
@@ -539,7 +548,6 @@ func (m tuiModel) View() string {
 		return "초기화 중..."
 	}
 
-	// === Header ===
 	headerStyle := lipgloss.NewStyle().Foreground(accentColor).Bold(true).Padding(0, 1)
 	header := headerStyle.Render("⌬ brainchain")
 
@@ -556,15 +564,9 @@ func (m tuiModel) View() string {
 	}
 	headerLine := header + strings.Repeat(" ", headerGap) + headerRight
 
-	// === Status Bar (above input) ===
-	statusBar := m.renderStatusBar()
-
-	// === Input Area ===
 	inputBoxStyle := lipgloss.NewStyle().Background(bgPanel).Padding(1, 1).Width(m.width)
 	inputArea := inputBoxStyle.Render(m.input.View())
 
-	// === Footer ===
-	footerStyle := lipgloss.NewStyle().Foreground(textMuted).Padding(0, 1)
 	hintStyle := lipgloss.NewStyle().Foreground(textMuted)
 	keyStyle := lipgloss.NewStyle().Foreground(accentColor)
 
@@ -576,13 +578,14 @@ func (m tuiModel) View() string {
 	shortcuts := keyStyle.Render("Ctrl+P") + hintStyle.Render(" cmd  ") +
 		keyStyle.Render("Ctrl+Q") + hintStyle.Render(" quit")
 
-	gap := m.width - lipgloss.Width(cwdText) - lipgloss.Width(shortcuts) - 4
+	gap := m.width - lipgloss.Width(cwdText) - lipgloss.Width(shortcuts) - 2
 	if gap < 1 {
 		gap = 1
 	}
-	footer := footerStyle.Render(cwdText + strings.Repeat(" ", gap) + shortcuts)
+	footer := " " + cwdText + strings.Repeat(" ", gap) + shortcuts
 
-	base := lipgloss.JoinVertical(lipgloss.Left, headerLine, m.viewport.View(), statusBar, inputArea, footer)
+	statusLine := m.renderStatusLine()
+	base := lipgloss.JoinVertical(lipgloss.Left, headerLine, m.viewport.View(), statusLine, inputArea, footer)
 
 	if m.showPalette || m.showSessionList {
 		return m.renderWithOverlay(base)
@@ -591,36 +594,24 @@ func (m tuiModel) View() string {
 	return base
 }
 
-func (m tuiModel) renderStatusBar() string {
-	statusStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color("#2a2a3a")).
-		Foreground(textColor).
-		Width(m.width).
-		Padding(0, 1)
-
-	if m.streaming {
-		spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-		frame := spinnerFrames[time.Now().UnixMilli()/80%int64(len(spinnerFrames))]
-
-		spinnerStyle := lipgloss.NewStyle().Foreground(accentColor).Bold(true)
-		statusTextStyle := lipgloss.NewStyle().Foreground(accentColor)
-		hintStyle := lipgloss.NewStyle().Foreground(textMuted).Italic(true)
-		escStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#f7768e")).Bold(true)
-
-		left := spinnerStyle.Render(frame) + " " + statusTextStyle.Render(m.status)
-		right := escStyle.Render("ESC") + hintStyle.Render(" interrupt")
-
-		gap := m.width - lipgloss.Width(left) - lipgloss.Width(right) - 4
-		if gap < 0 {
-			gap = 0
-		}
-
-		return statusStyle.Render(left + strings.Repeat(" ", gap) + right)
+func (m tuiModel) renderStatusLine() string {
+	if !m.streaming {
+		return " "
 	}
 
-	// Not streaming - show ready status
-	readyStyle := lipgloss.NewStyle().Foreground(thinkingColor)
-	return statusStyle.Render(readyStyle.Render("● ready"))
+	statusStyle := lipgloss.NewStyle().Foreground(accentColor)
+	hintStyle := lipgloss.NewStyle().Foreground(textMuted)
+	escStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#f7768e"))
+
+	left := statusStyle.Render("● " + m.status)
+	right := escStyle.Render("ESC") + hintStyle.Render(" interrupt")
+
+	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right) - 2
+	if gap < 0 {
+		gap = 0
+	}
+
+	return " " + left + strings.Repeat(" ", gap) + right
 }
 
 func runTUI() error {

@@ -7,6 +7,7 @@ export interface AgentDef {
 export interface SDKConfig {
   claudeAgents: Record<string, AgentDef>;
   codexAgents: Record<string, AgentDef>;
+  mainAgent?: string;
   maxThinkingTokens?: number;
   allowedTools?: string[];
 }

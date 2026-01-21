@@ -33,7 +33,7 @@ export async function runClaude(
     'mcp__*'
   ];
 
-  const options = {
+  const options: Record<string, unknown> = {
     maxThinkingTokens: config.maxThinkingTokens || 32000,
     includePartialMessages: true,
     agents,
@@ -41,6 +41,10 @@ export async function runClaude(
     cwd: process.cwd(),
     ...(sessionId ? { resume: sessionId } : {}),
   };
+
+  if (config.mainAgent && agents[config.mainAgent]) {
+    options.agent = config.mainAgent;
+  }
 
   let thinkingBuffer = '';
   let textBuffer = '';

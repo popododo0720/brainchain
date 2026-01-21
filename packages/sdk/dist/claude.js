@@ -35,6 +35,9 @@ export async function runClaude(prompt, config, sessionId) {
         cwd: process.cwd(),
         ...(sessionId ? { resume: sessionId } : {}),
     };
+    if (config.mainAgent && agents[config.mainAgent]) {
+        options.agent = config.mainAgent;
+    }
     let thinkingBuffer = '';
     let textBuffer = '';
     let resultSessionId = sessionId || '';

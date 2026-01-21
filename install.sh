@@ -150,13 +150,13 @@ install() {
     build_sdk
 
     step "Building brainchain..."
-    cd "$SCRIPT_DIR/cmd/chat"
-    go build -o brainchain .
+    cd "$SCRIPT_DIR"
+    go build -o brainchain ./cmd/chat
     success "Built brainchain binary"
 
     step "Installing to $BIN_DIR..."
     mkdir -p "$BIN_DIR"
-    cp brainchain "$BIN_DIR/brainchain"
+    mv brainchain "$BIN_DIR/brainchain"
     chmod +x "$BIN_DIR/brainchain"
     success "Installed to $BIN_DIR/brainchain"
 

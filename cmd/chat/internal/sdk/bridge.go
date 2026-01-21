@@ -60,6 +60,7 @@ type AgentDef struct {
 type SDKConfig struct {
 	ClaudeAgents     map[string]AgentDef `json:"claudeAgents"`
 	CodexAgents      map[string]AgentDef `json:"codexAgents"`
+	MainAgent        string              `json:"mainAgent,omitempty"`
 	MaxThinkingToken int                 `json:"maxThinkingTokens,omitempty"`
 }
 
@@ -94,14 +95,26 @@ func NewBridge(cfg *config.Config, prompts map[string]string) (*Bridge, error) {
 		return nil, fmt.Errorf("SDK not found: %w", err)
 	}
 
-	// Build SDK config by classifying agents
 	sdkConfig := SDKConfig{
 		ClaudeAgents:     make(map[string]AgentDef),
 		CodexAgents:      make(map[string]AgentDef),
 		MaxThinkingToken: 32000,
 	}
 
-	// Classify roles by agent command
+	if orchestratorPrompt, ok := prompts["orchestrator"]; ok {
+		orchestratorAgent, ok := cfg.Agents[cfg.Orchestrator.Agent]
+		model := ""
+		if ok {
+			model = orchestratorAgent.Model
+		}
+		sdkConfig.ClaudeAgents["orchestrator"] = AgentDef{
+			Prompt:      orchestratorPrompt,
+			Model:       model,
+			Description: "Main orchestrator agent",
+		}
+		sdkConfig.MainAgent = "orchestrator"
+	}
+
 	for roleName, role := range cfg.Roles {
 		agent, ok := cfg.Agents[role.Agent]
 		if !ok {
@@ -125,7 +138,6 @@ func NewBridge(cfg *config.Config, prompts map[string]string) (*Bridge, error) {
 		} else if cmd == "codex" {
 			sdkConfig.CodexAgents[roleName] = agentDef
 		}
-		// gemini and others are ignored for now
 	}
 
 	return &Bridge{

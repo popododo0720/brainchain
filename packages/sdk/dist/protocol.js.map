@@ -1,1 +1,1 @@
-{"version":3,"file":"protocol.js","sourceRoot":"","sources":["../src/protocol.ts"],"names":[],"mappings":"AA0GA,MAAM,UAAU,IAAI,CAAC,KAAY;IAC/B,OAAO,CAAC,GAAG,CAAC,IAAI,CAAC,SAAS,CAAC,KAAK,CAAC,CAAC,CAAC;AACrC,CAAC"}
+{"version":3,"file":"protocol.js","sourceRoot":"","sources":["../src/protocol.ts"],"names":[],"mappings":"AA2GA,MAAM,UAAU,IAAI,CAAC,KAAY;IAC/B,OAAO,CAAC,GAAG,CAAC,IAAI,CAAC,SAAS,CAAC,KAAK,CAAC,CAAC,CAAC;AACrC,CAAC"}

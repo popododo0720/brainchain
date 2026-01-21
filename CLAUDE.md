@@ -169,7 +169,7 @@ Execution:
 - Match existing patterns (if codebase is disciplined)
 - Propose approach first (if codebase is chaotic)
 - Never suppress type errors with `as any`, `@ts-ignore`, `@ts-expect-error`
-- **Commit per task**: 작업 단위로 커밋해서 롤백하기 쉽게 유지. 한 번에 여러 작업 묶지 말 것.
+- Never commit unless explicitly requested
 - **Bugfix Rule**: Fix minimally. NEVER refactor while fixing.
 
 ### Verification:
@@ -301,7 +301,7 @@ If the user's approach seems problematic:
 | Skip validation step | Never |
 | Parallel tasks with overlapping files | Never |
 | Ignore reviewer feedback | Never |
-| Bundle multiple tasks in one commit | Never (커밋은 작업 단위로, 롤백 용이하게) |
+| Commit without explicit request | Never |
 | Type error suppression (`as any`, `@ts-ignore`) | Never |
 
 ## Anti-Patterns (BLOCKING violations)
