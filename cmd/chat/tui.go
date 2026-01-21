@@ -44,18 +44,19 @@ type chatMessage struct {
 }
 
 type tuiModel struct {
-	viewport      viewport.Model
-	input         textinput.Model
-	spinner       spinner.Model
-	messages      []chatMessage
-	currentOutput strings.Builder
-	width         int
-	height        int
-	ready         bool
-	showWelcome   bool
-	streaming     bool
-	status        string
-	cmd           *exec.Cmd
+	viewport       viewport.Model
+	input          textinput.Model
+	spinner        spinner.Model
+	messages       []chatMessage
+	currentOutput  strings.Builder
+	width          int
+	height         int
+	ready          bool
+	showWelcome    bool
+	streaming      bool
+	status         string
+	cmd            *exec.Cmd
+	sessionID      string
 }
 
 func newTUIModel() tuiModel {
@@ -89,23 +90,30 @@ type streamEvent struct {
 	ToolName  string
 	Done      bool
 	Error     string
+	SessionID string
 }
 
 func (m tuiModel) Init() tea.Cmd {
 	return tea.Batch(textinput.Blink, m.spinner.Tick)
 }
 
-func streamClaude(prompt string) tea.Cmd {
+func streamClaude(prompt string, sessionID string) tea.Cmd {
 	return func() tea.Msg {
 		cwd, _ := os.Getwd()
 
-		cmd := exec.Command("claude",
+		args := []string{
 			"-p", prompt,
 			"--print",
 			"--output-format", "stream-json",
 			"--verbose",
 			"--permission-mode", "acceptEdits",
-		)
+		}
+
+		if sessionID != "" {
+			args = append(args, "--resume", sessionID)
+		}
+
+		cmd := exec.Command("claude", args...)
 		cmd.Dir = cwd
 
 		stdout, err := cmd.StdoutPipe()
@@ -124,6 +132,7 @@ func streamClaude(prompt string) tea.Cmd {
 		var result strings.Builder
 		var thinking strings.Builder
 		var tools []string
+		var capturedSessionID string
 
 		for scanner.Scan() {
 			line := scanner.Text()
@@ -138,7 +147,16 @@ func streamClaude(prompt string) tea.Cmd {
 
 			eventType, _ := event["type"].(string)
 
+			if sid, ok := event["session_id"].(string); ok && capturedSessionID == "" {
+				capturedSessionID = sid
+			}
+
 			switch eventType {
+			case "system":
+				if sid, ok := event["session_id"].(string); ok {
+					capturedSessionID = sid
+				}
+
 			case "assistant":
 				if msg, ok := event["message"].(map[string]any); ok {
 					if content, ok := msg["content"].([]any); ok {
@@ -175,6 +193,9 @@ func streamClaude(prompt string) tea.Cmd {
 				if r, ok := event["result"].(string); ok && result.Len() == 0 {
 					result.WriteString(r)
 				}
+				if sid, ok := event["session_id"].(string); ok {
+					capturedSessionID = sid
+				}
 			}
 		}
 
@@ -204,7 +225,7 @@ func streamClaude(prompt string) tea.Cmd {
 			sb.WriteString("(응답 없음)")
 		}
 
-		return streamEvent{EventType: "done", Content: sb.String(), Done: true}
+		return streamEvent{EventType: "done", Content: sb.String(), Done: true, SessionID: capturedSessionID}
 	}
 }
 
@@ -270,7 +291,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.viewport.SetContent(m.renderContent())
 				m.viewport.GotoBottom()
 
-				return m, streamClaude(input)
+				return m, streamClaude(input, m.sessionID)
 			}
 		}
 
@@ -278,6 +299,10 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Done {
 			m.streaming = false
 			m.status = "ready"
+
+			if msg.SessionID != "" {
+				m.sessionID = msg.SessionID
+			}
 
 			content := msg.Content
 			if msg.Error != "" {
@@ -328,7 +353,7 @@ func (m tuiModel) renderWelcome() string {
 `)
 
 	subtitleStyle := lipgloss.NewStyle().Foreground(textMuted)
-	subtitle := subtitleStyle.Render("Claude Code 기반 AI 오케스트레이터")
+	subtitle := subtitleStyle.Render("Multi-Agent Orchestrator")
 
 	helpStyle := lipgloss.NewStyle().Foreground(textMuted).MarginTop(2)
 	help := helpStyle.Render("메시지를 입력하고 Enter • Ctrl+C 종료")

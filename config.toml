@@ -119,6 +119,15 @@ prompt_file = "prompts/summarizer.md"
 agent = "claude-haiku-web"
 prompt_file = "prompts/researcher.md"
 
+# Exploration roles (cheap/fast search)
+[roles.explore]
+agent = "claude-haiku"
+prompt_file = "prompts/explore.md"
+
+[roles.librarian]
+agent = "claude-haiku-web"
+prompt_file = "prompts/librarian.md"
+
 # === Workflow ===
 
 [[workflow.steps]]
