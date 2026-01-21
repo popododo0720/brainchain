@@ -1,11 +1,22 @@
 # Brainchain Configuration
 
 # === Orchestrator ===
+# When running `brainchain`, launches this agent's CLI directly
+# Options: "claude", "codex", or any custom agent
 [orchestrator]
-agent = "claude-opus"
+agent = "claude"
 prompt_file = "prompts/orchestrator.md"
 
 # === Agents (CLI adapters) ===
+
+# Claude (interactive orchestrator)
+[agents.claude]
+command = "claude"
+
+# Codex (interactive orchestrator)
+[agents.codex]
+command = "codex"
+reasoning_effort = "medium"
 
 # Claude Opus - High effort (planning, complex analysis)
 [agents.claude-opus-high]

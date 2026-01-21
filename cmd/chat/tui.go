@@ -157,6 +157,31 @@ func streamClaude(prompt string, sessionID string) tea.Cmd {
 					capturedSessionID = sid
 				}
 
+			case "content_block_start":
+				if cb, ok := event["content_block"].(map[string]any); ok {
+					blockType, _ := cb["type"].(string)
+					if blockType == "thinking" {
+						if t, ok := cb["thinking"].(string); ok {
+							thinking.WriteString(t)
+						}
+					}
+				}
+
+			case "content_block_delta":
+				if delta, ok := event["delta"].(map[string]any); ok {
+					deltaType, _ := delta["type"].(string)
+					switch deltaType {
+					case "thinking_delta":
+						if t, ok := delta["thinking"].(string); ok {
+							thinking.WriteString(t)
+						}
+					case "text_delta":
+						if t, ok := delta["text"].(string); ok {
+							result.WriteString(t)
+						}
+					}
+				}
+
 			case "assistant":
 				if msg, ok := event["message"].(map[string]any); ok {
 					if content, ok := msg["content"].([]any); ok {
@@ -165,11 +190,11 @@ func streamClaude(prompt string, sessionID string) tea.Cmd {
 								blockType, _ := block["type"].(string)
 								switch blockType {
 								case "thinking":
-									if t, ok := block["thinking"].(string); ok {
+									if t, ok := block["thinking"].(string); ok && thinking.Len() == 0 {
 										thinking.WriteString(t)
 									}
 								case "text":
-									if text, ok := block["text"].(string); ok {
+									if text, ok := block["text"].(string); ok && result.Len() == 0 {
 										result.WriteString(text)
 									}
 								case "tool_use":
