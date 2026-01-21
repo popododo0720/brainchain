@@ -1,14 +1,15 @@
 package main
 
 import (
-	"context"
+	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
-	"brainchain/cmd/chat/internal/adapter"
-
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -22,24 +23,39 @@ var (
 	accentColor     = lipgloss.Color("#fab283")
 	userBorder      = lipgloss.Color("#7aa2f7")
 	assistantBorder = lipgloss.Color("#fab283")
+	thinkingColor   = lipgloss.Color("#9ece6a")
+	toolColor       = lipgloss.Color("#bb9af7")
+)
+
+type messageType int
+
+const (
+	msgUser messageType = iota
+	msgAssistant
+	msgThinking
+	msgTool
 )
 
 type chatMessage struct {
-	role    string
-	content string
-	time    time.Time
+	msgType  messageType
+	content  string
+	toolName string
+	time     time.Time
 }
 
 type tuiModel struct {
-	viewport    viewport.Model
-	input       textinput.Model
-	messages    []chatMessage
-	width       int
-	height      int
-	ready       bool
-	showWelcome bool
-	adapter     adapter.Adapter
-	streaming   bool
+	viewport      viewport.Model
+	input         textinput.Model
+	spinner       spinner.Model
+	messages      []chatMessage
+	currentOutput strings.Builder
+	width         int
+	height        int
+	ready         bool
+	showWelcome   bool
+	streaming     bool
+	status        string
+	cmd           *exec.Cmd
 }
 
 func newTUIModel() tuiModel {
@@ -54,55 +70,158 @@ func newTUIModel() tuiModel {
 	ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(textMuted)
 	ti.Prompt = "> "
 
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(accentColor)
+
 	return tuiModel{
 		input:       ti,
+		spinner:     s,
 		messages:    []chatMessage{},
 		showWelcome: true,
-		adapter:     adapter.GetAvailable(),
+		status:      "ready",
 	}
 }
 
-type streamChunkMsg string
-type streamErrorMsg string
+type streamEvent struct {
+	EventType string
+	Content   string
+	ToolName  string
+	Done      bool
+	Error     string
+}
 
 func (m tuiModel) Init() tea.Cmd {
-	return textinput.Blink
+	return tea.Batch(textinput.Blink, m.spinner.Tick)
 }
 
-func (m *tuiModel) sendMessage(input string) tea.Cmd {
+func streamClaude(prompt string) tea.Cmd {
 	return func() tea.Msg {
-		if m.adapter == nil {
-			return streamErrorMsg("CLI를 찾을 수 없습니다. claude 또는 codex를 설치하세요")
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer cancel()
-
 		cwd, _ := os.Getwd()
-		result, err := m.adapter.Run(ctx, input, cwd, nil)
+
+		cmd := exec.Command("claude",
+			"-p", prompt,
+			"--print",
+			"--output-format", "stream-json",
+			"--verbose",
+			"--permission-mode", "acceptEdits",
+		)
+		cmd.Dir = cwd
+
+		stdout, err := cmd.StdoutPipe()
 		if err != nil {
-			return streamErrorMsg(err.Error())
+			return streamEvent{EventType: "error", Error: err.Error(), Done: true}
 		}
 
-		if !result.Success {
-			if result.Error != "" {
-				return streamErrorMsg(result.Error)
+		if err := cmd.Start(); err != nil {
+			return streamEvent{EventType: "error", Error: err.Error(), Done: true}
+		}
+
+		scanner := bufio.NewScanner(stdout)
+		buf := make([]byte, 0, 1024*1024)
+		scanner.Buffer(buf, 10*1024*1024)
+
+		var result strings.Builder
+		var thinking strings.Builder
+		var tools []string
+
+		for scanner.Scan() {
+			line := scanner.Text()
+			if line == "" {
+				continue
 			}
-			return streamErrorMsg("Command failed")
+
+			var event map[string]any
+			if err := json.Unmarshal([]byte(line), &event); err != nil {
+				continue
+			}
+
+			eventType, _ := event["type"].(string)
+
+			switch eventType {
+			case "assistant":
+				if msg, ok := event["message"].(map[string]any); ok {
+					if content, ok := msg["content"].([]any); ok {
+						for _, c := range content {
+							if block, ok := c.(map[string]any); ok {
+								blockType, _ := block["type"].(string)
+								switch blockType {
+								case "thinking":
+									if t, ok := block["thinking"].(string); ok {
+										thinking.WriteString(t)
+									}
+								case "text":
+									if text, ok := block["text"].(string); ok {
+										result.WriteString(text)
+									}
+								case "tool_use":
+									if name, ok := block["name"].(string); ok {
+										tools = append(tools, name)
+									}
+								}
+							}
+						}
+					}
+				}
+
+			case "tool":
+				if subtype, ok := event["subtype"].(string); ok && subtype == "start" {
+					if name, ok := event["name"].(string); ok {
+						tools = append(tools, name)
+					}
+				}
+
+			case "result":
+				if r, ok := event["result"].(string); ok && result.Len() == 0 {
+					result.WriteString(r)
+				}
+			}
 		}
 
-		return streamChunkMsg(result.Output)
+		cmd.Wait()
+
+		var sb strings.Builder
+
+		if thinking.Len() > 0 {
+			sb.WriteString("💭 **사고 과정**\n")
+			thinkText := thinking.String()
+			if len(thinkText) > 500 {
+				thinkText = thinkText[:500] + "..."
+			}
+			sb.WriteString(thinkText)
+			sb.WriteString("\n\n")
+		}
+
+		if len(tools) > 0 {
+			sb.WriteString("🔧 **사용된 도구**: ")
+			sb.WriteString(strings.Join(unique(tools), ", "))
+			sb.WriteString("\n\n")
+		}
+
+		if result.Len() > 0 {
+			sb.WriteString(result.String())
+		} else {
+			sb.WriteString("(응답 없음)")
+		}
+
+		return streamEvent{EventType: "done", Content: sb.String(), Done: true}
 	}
+}
+
+func unique(slice []string) []string {
+	seen := make(map[string]bool)
+	var result []string
+	for _, s := range slice {
+		if !seen[s] {
+			seen[s] = true
+			result = append(result, s)
+		}
+	}
+	return result
 }
 
 func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var (
-		tiCmd tea.Cmd
-		vpCmd tea.Cmd
-	)
-
-	m.input, tiCmd = m.input.Update(msg)
-	m.viewport, vpCmd = m.viewport.Update(msg)
+	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -128,6 +247,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.Type {
 		case tea.KeyCtrlC, tea.KeyEsc:
+			if m.cmd != nil && m.cmd.Process != nil {
+				m.cmd.Process.Kill()
+			}
 			return m, tea.Quit
 
 		case tea.KeyEnter:
@@ -135,16 +257,12 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if input != "" && !m.streaming {
 				m.showWelcome = false
 				m.streaming = true
+				m.status = "처리 중..."
+				m.currentOutput.Reset()
 
 				m.messages = append(m.messages, chatMessage{
-					role:    "user",
+					msgType: msgUser,
 					content: input,
-					time:    time.Now(),
-				})
-
-				m.messages = append(m.messages, chatMessage{
-					role:    "assistant",
-					content: "생각 중...",
 					time:    time.Now(),
 				})
 
@@ -152,30 +270,42 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.viewport.SetContent(m.renderContent())
 				m.viewport.GotoBottom()
 
-				return m, m.sendMessage(input)
+				return m, streamClaude(input)
 			}
 		}
 
-	case streamChunkMsg:
-		m.streaming = false
-		if len(m.messages) > 0 && m.messages[len(m.messages)-1].role == "assistant" {
-			m.messages[len(m.messages)-1].content = string(msg)
-		}
-		m.viewport.SetContent(m.renderContent())
-		m.viewport.GotoBottom()
-		return m, nil
+	case streamEvent:
+		if msg.Done {
+			m.streaming = false
+			m.status = "ready"
 
-	case streamErrorMsg:
-		m.streaming = false
-		if len(m.messages) > 0 && m.messages[len(m.messages)-1].role == "assistant" {
-			m.messages[len(m.messages)-1].content = "오류: " + string(msg)
+			content := msg.Content
+			if msg.Error != "" {
+				content = "❌ 오류: " + msg.Error
+			}
+
+			m.messages = append(m.messages, chatMessage{
+				msgType: msgAssistant,
+				content: content,
+				time:    time.Now(),
+			})
+
+			m.viewport.SetContent(m.renderContent())
+			m.viewport.GotoBottom()
 		}
-		m.viewport.SetContent(m.renderContent())
-		m.viewport.GotoBottom()
-		return m, nil
+
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		cmds = append(cmds, cmd)
 	}
 
-	return m, tea.Batch(tiCmd, vpCmd)
+	var tiCmd, vpCmd tea.Cmd
+	m.input, tiCmd = m.input.Update(msg)
+	m.viewport, vpCmd = m.viewport.Update(msg)
+	cmds = append(cmds, tiCmd, vpCmd)
+
+	return m, tea.Batch(cmds...)
 }
 
 func (m tuiModel) renderContent() string {
@@ -198,19 +328,12 @@ func (m tuiModel) renderWelcome() string {
 `)
 
 	subtitleStyle := lipgloss.NewStyle().Foreground(textMuted)
-
-	providerInfo := "프로바이더를 찾을 수 없습니다"
-	if m.adapter != nil {
-		providerInfo = "사용 중: " + m.adapter.DisplayName()
-	}
-	subtitle := subtitleStyle.Render(providerInfo)
+	subtitle := subtitleStyle.Render("Claude Code 기반 AI 오케스트레이터")
 
 	helpStyle := lipgloss.NewStyle().Foreground(textMuted).MarginTop(2)
-
-	help := helpStyle.Render("메시지를 입력하고 Enter를 누르세요 • Ctrl+C로 종료")
+	help := helpStyle.Render("메시지를 입력하고 Enter • Ctrl+C 종료")
 
 	content := lipgloss.JoinVertical(lipgloss.Center, logo, subtitle, help)
-
 	return lipgloss.Place(m.width, m.viewport.Height, lipgloss.Center, lipgloss.Center, content)
 }
 
@@ -221,12 +344,19 @@ func (m tuiModel) renderMessages() string {
 		var borderCol lipgloss.Color
 		var roleLabel string
 
-		if msg.role == "user" {
+		switch msg.msgType {
+		case msgUser:
 			borderCol = userBorder
 			roleLabel = "나"
-		} else {
+		case msgAssistant:
 			borderCol = assistantBorder
 			roleLabel = "AI"
+		case msgThinking:
+			borderCol = thinkingColor
+			roleLabel = "💭 사고"
+		case msgTool:
+			borderCol = toolColor
+			roleLabel = "🔧 " + msg.toolName
 		}
 
 		panelStyle := lipgloss.NewStyle().
@@ -237,18 +367,28 @@ func (m tuiModel) renderMessages() string {
 			BorderForeground(borderCol).
 			Width(m.width - 4)
 
-		roleStyle := lipgloss.NewStyle().Foreground(textMuted).MarginBottom(0)
+		roleStyle := lipgloss.NewStyle().Foreground(textMuted)
 		contentStyle := lipgloss.NewStyle().Foreground(textColor)
 
-		roleText := roleStyle.Render(roleLabel)
-		contentText := contentStyle.Render(msg.content)
-
-		panel := panelStyle.Render(roleText + "\n" + contentText)
+		panel := panelStyle.Render(roleStyle.Render(roleLabel) + "\n" + contentStyle.Render(msg.content))
 
 		if i > 0 {
 			sb.WriteString("\n")
 		}
 		sb.WriteString(panel)
+	}
+
+	if m.streaming {
+		spinnerStyle := lipgloss.NewStyle().
+			Background(bgPanel).
+			Padding(1, 2).
+			BorderLeft(true).
+			BorderStyle(lipgloss.ThickBorder()).
+			BorderForeground(accentColor).
+			Width(m.width - 4)
+
+		sb.WriteString("\n")
+		sb.WriteString(spinnerStyle.Render(m.spinner.View() + " " + m.status))
 	}
 
 	return sb.String()
@@ -263,11 +403,7 @@ func (m tuiModel) View() string {
 	header := headerStyle.Render("⌬ brainchain")
 
 	statusStyle := lipgloss.NewStyle().Foreground(textMuted).Padding(0, 1)
-	providerName := "none"
-	if m.adapter != nil {
-		providerName = m.adapter.Name()
-	}
-	status := statusStyle.Render(fmt.Sprintf("%s • %d개 메시지", providerName, len(m.messages)))
+	status := statusStyle.Render(fmt.Sprintf("claude • %d개 메시지", len(m.messages)))
 
 	headerLine := lipgloss.JoinHorizontal(lipgloss.Top,
 		header,
