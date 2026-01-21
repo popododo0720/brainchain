@@ -60,6 +60,11 @@ type tuiModel struct {
 	sessionID      string
 	bridge         *sdk.Bridge
 	useSDK         bool
+	
+	streamThinking  strings.Builder
+	streamReasoning strings.Builder
+	streamText      strings.Builder
+	streamTools     []string
 }
 
 func newTUIModel() tuiModel {
@@ -109,13 +114,19 @@ type streamEvent struct {
 	Done      bool
 	Error     string
 	SessionID string
+	Delta     string
+}
+
+type sdkEventMsg struct {
+	event   sdk.Event
+	eventCh chan sdk.Event
 }
 
 func (m tuiModel) Init() tea.Cmd {
 	return tea.Batch(textinput.Blink, m.spinner.Tick)
 }
 
-func streamWithSDK(bridge *sdk.Bridge, prompt string, sessionID string) tea.Cmd {
+func startSDKStream(bridge *sdk.Bridge, prompt string, sessionID string) tea.Cmd {
 	return func() tea.Msg {
 		eventCh := make(chan sdk.Event, 100)
 		
@@ -124,73 +135,17 @@ func streamWithSDK(bridge *sdk.Bridge, prompt string, sessionID string) tea.Cmd 
 			close(eventCh)
 		}()
 
-		var result strings.Builder
-		var thinking strings.Builder
-		var reasoning strings.Builder
-		var tools []string
-		var capturedSessionID string
+		return sdkEventMsg{eventCh: eventCh}
+	}
+}
 
-		for event := range eventCh {
-			switch event.Type {
-			case sdk.EventSystem:
-				if event.SessionID != "" {
-					capturedSessionID = event.SessionID
-				}
-			case sdk.EventThinking:
-				thinking.Reset()
-				thinking.WriteString(event.Content)
-			case sdk.EventReasoning:
-				reasoning.Reset()
-				reasoning.WriteString(event.Content)
-			case sdk.EventText:
-				result.Reset()
-				result.WriteString(event.Content)
-			case sdk.EventToolStart:
-				tools = append(tools, event.Name)
-			case sdk.EventResult:
-				if event.SessionID != "" {
-					capturedSessionID = event.SessionID
-				}
-			case sdk.EventError:
-				return streamEvent{EventType: "error", Error: event.Message, Done: true}
-			}
+func waitForSDKEvent(eventCh chan sdk.Event) tea.Cmd {
+	return func() tea.Msg {
+		event, ok := <-eventCh
+		if !ok {
+			return streamEvent{EventType: "done", Done: true}
 		}
-
-		var sb strings.Builder
-
-		if thinking.Len() > 0 {
-			sb.WriteString("💭 **사고 과정**\n")
-			thinkText := thinking.String()
-			if len(thinkText) > 500 {
-				thinkText = thinkText[:500] + "..."
-			}
-			sb.WriteString(thinkText)
-			sb.WriteString("\n\n")
-		}
-
-		if reasoning.Len() > 0 {
-			sb.WriteString("🧠 **추론 과정**\n")
-			reasonText := reasoning.String()
-			if len(reasonText) > 500 {
-				reasonText = reasonText[:500] + "..."
-			}
-			sb.WriteString(reasonText)
-			sb.WriteString("\n\n")
-		}
-
-		if len(tools) > 0 {
-			sb.WriteString("🔧 **사용된 도구**: ")
-			sb.WriteString(strings.Join(unique(tools), ", "))
-			sb.WriteString("\n\n")
-		}
-
-		if result.Len() > 0 {
-			sb.WriteString(result.String())
-		} else {
-			sb.WriteString("(응답 없음)")
-		}
-
-		return streamEvent{EventType: "done", Content: sb.String(), Done: true, SessionID: capturedSessionID}
+		return sdkEventMsg{event: event, eventCh: eventCh}
 	}
 }
 
@@ -282,12 +237,60 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.viewport.SetContent(m.renderContent())
 				m.viewport.GotoBottom()
 
+				m.streamThinking.Reset()
+				m.streamReasoning.Reset()
+				m.streamText.Reset()
+				m.streamTools = nil
+
 				if m.useSDK && m.bridge != nil {
-					return m, streamWithSDK(m.bridge, input, m.sessionID)
+					return m, startSDKStream(m.bridge, input, m.sessionID)
 				}
 				return m, streamClaudeCLI(input, m.sessionID)
 			}
 		}
+
+	case sdkEventMsg:
+		if msg.eventCh == nil {
+			break
+		}
+		
+		event := msg.event
+		switch event.Type {
+		case sdk.EventSystem:
+			if event.SessionID != "" {
+				m.sessionID = event.SessionID
+			}
+		case sdk.EventThinking:
+			m.streamThinking.Reset()
+			m.streamThinking.WriteString(event.Content)
+			m.status = "💭 사고 중..."
+		case sdk.EventReasoning:
+			m.streamReasoning.Reset()
+			m.streamReasoning.WriteString(event.Content)
+			m.status = "🧠 추론 중..."
+		case sdk.EventText:
+			m.streamText.Reset()
+			m.streamText.WriteString(event.Content)
+			m.status = "✍️ 작성 중..."
+		case sdk.EventToolStart:
+			m.streamTools = append(m.streamTools, event.Name)
+			m.status = "🔧 " + event.Name
+		case sdk.EventError:
+			m.streaming = false
+			m.status = "ready"
+			m.messages = append(m.messages, chatMessage{
+				msgType: msgAssistant,
+				content: "❌ 오류: " + event.Message,
+				time:    time.Now(),
+			})
+			m.viewport.SetContent(m.renderContent())
+			m.viewport.GotoBottom()
+			return m, nil
+		}
+
+		m.viewport.SetContent(m.renderContent())
+		m.viewport.GotoBottom()
+		return m, waitForSDKEvent(msg.eventCh)
 
 	case streamEvent:
 		if msg.Done {
@@ -298,7 +301,42 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.sessionID = msg.SessionID
 			}
 
-			content := msg.Content
+			var content string
+			if msg.Content != "" {
+				content = msg.Content
+			} else {
+				var sb strings.Builder
+				if m.streamThinking.Len() > 0 {
+					sb.WriteString("💭 **사고 과정**\n")
+					thinkText := m.streamThinking.String()
+					if len(thinkText) > 500 {
+						thinkText = thinkText[:500] + "..."
+					}
+					sb.WriteString(thinkText)
+					sb.WriteString("\n\n")
+				}
+				if m.streamReasoning.Len() > 0 {
+					sb.WriteString("🧠 **추론 과정**\n")
+					reasonText := m.streamReasoning.String()
+					if len(reasonText) > 500 {
+						reasonText = reasonText[:500] + "..."
+					}
+					sb.WriteString(reasonText)
+					sb.WriteString("\n\n")
+				}
+				if len(m.streamTools) > 0 {
+					sb.WriteString("🔧 **사용된 도구**: ")
+					sb.WriteString(strings.Join(unique(m.streamTools), ", "))
+					sb.WriteString("\n\n")
+				}
+				if m.streamText.Len() > 0 {
+					sb.WriteString(m.streamText.String())
+				} else {
+					sb.WriteString("(응답 없음)")
+				}
+				content = sb.String()
+			}
+
 			if msg.Error != "" {
 				content = "❌ 오류: " + msg.Error
 			}
@@ -398,7 +436,7 @@ func (m tuiModel) renderMessages() string {
 	}
 
 	if m.streaming {
-		spinnerStyle := lipgloss.NewStyle().
+		panelStyle := lipgloss.NewStyle().
 			Background(bgPanel).
 			Padding(1, 2).
 			BorderLeft(true).
@@ -406,8 +444,28 @@ func (m tuiModel) renderMessages() string {
 			BorderForeground(accentColor).
 			Width(m.width - 4)
 
+		roleStyle := lipgloss.NewStyle().Foreground(textMuted)
+		contentStyle := lipgloss.NewStyle().Foreground(textColor)
+		thinkStyle := lipgloss.NewStyle().Foreground(thinkingColor)
+
+		var streamContent strings.Builder
+		streamContent.WriteString(m.spinner.View() + " " + m.status + "\n\n")
+
+		if m.streamThinking.Len() > 0 {
+			thinkText := m.streamThinking.String()
+			if len(thinkText) > 300 {
+				thinkText = thinkText[len(thinkText)-300:]
+			}
+			streamContent.WriteString(thinkStyle.Render("💭 " + thinkText))
+			streamContent.WriteString("\n")
+		}
+
+		if m.streamText.Len() > 0 {
+			streamContent.WriteString(contentStyle.Render(m.streamText.String()))
+		}
+
 		sb.WriteString("\n")
-		sb.WriteString(spinnerStyle.Render(m.spinner.View() + " " + m.status))
+		sb.WriteString(panelStyle.Render(roleStyle.Render("AI") + "\n" + streamContent.String()))
 	}
 
 	return sb.String()
