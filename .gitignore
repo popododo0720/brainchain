@@ -5,7 +5,7 @@ specs/
 plan.json
 *.egg-info/
 .eggs/
-dist/
+/dist/
 build/
 .pytest_cache/
 .venv/
@@ -15,3 +15,7 @@ venv/
 cmd/chat/brainchain
 cmd/chat/chat
 *.exe
+/brainchain
+
+# Node
+node_modules/

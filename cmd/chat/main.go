@@ -7,9 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"syscall"
 
 	"brainchain/cmd/chat/internal/config"
 	"brainchain/cmd/chat/internal/executor"
@@ -27,7 +25,7 @@ func main() {
 		workflowFlag = flag.Bool("workflow", false, "Run complete workflow")
 		sessionsFlag = flag.Bool("sessions", false, "List sessions")
 		sessionInfo  = flag.String("session-info", "", "Show session details")
-		monitorFlag  = flag.Bool("monitor", false, "Launch monitoring TUI")
+
 		cwdFlag      = flag.String("cwd", "", "Working directory")
 		jsonFlag     = flag.Bool("json", false, "Output as JSON")
 		configPath   = flag.String("config", "", "Config file path")
@@ -44,8 +42,7 @@ Flags:
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, `
 Examples:
-  brainchain                              # Launch orchestrator CLI (claude/codex)
-  brainchain --monitor                    # Launch monitoring TUI
+  brainchain                              # Launch TUI
   brainchain --list                       # List agents and roles
   brainchain --exec planner -p "Create auth system"
   brainchain --parallel tasks.json
@@ -69,16 +66,8 @@ Examples:
 		cwd, _ = os.Getwd()
 	}
 
-	if *monitorFlag {
-		if err := runTUI(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		return
-	}
-
 	if !*listFlag && *execRole == "" && *parallelFile == "" && !*workflowFlag && !*sessionsFlag && *sessionInfo == "" {
-		if err := launchOrchestrator(*configPath, cwd); err != nil {
+		if err := runTUI(); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -138,29 +127,7 @@ Examples:
 	}
 }
 
-func launchOrchestrator(configPath, cwd string) error {
-	cfg, err := config.Load(configPath)
-	if err != nil {
-		return err
-	}
 
-	agent, ok := cfg.Agents[cfg.Orchestrator.Agent]
-	if !ok {
-		return fmt.Errorf("orchestrator agent '%s' not found", cfg.Orchestrator.Agent)
-	}
-
-	binary, err := exec.LookPath(agent.Command)
-	if err != nil {
-		return fmt.Errorf("%s not found in PATH", agent.Command)
-	}
-
-	env := os.Environ()
-	if err := syscall.Chdir(cwd); err != nil {
-		return err
-	}
-
-	return syscall.Exec(binary, append([]string{agent.Command}, agent.Args...), env)
-}
 
 func cmdInit() error {
 	home, err := os.UserHomeDir()

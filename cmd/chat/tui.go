@@ -1,13 +1,14 @@
 package main
 
 import (
-	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
+
+	"brainchain/cmd/chat/internal/config"
+	"brainchain/cmd/chat/internal/sdk"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -57,6 +58,8 @@ type tuiModel struct {
 	status         string
 	cmd            *exec.Cmd
 	sessionID      string
+	bridge         *sdk.Bridge
+	useSDK         bool
 }
 
 func newTUIModel() tuiModel {
@@ -75,13 +78,28 @@ func newTUIModel() tuiModel {
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(accentColor)
 
-	return tuiModel{
+	m := tuiModel{
 		input:       ti,
 		spinner:     s,
 		messages:    []chatMessage{},
 		showWelcome: true,
 		status:      "ready",
+		useSDK:      false,
 	}
+
+	cfg, err := config.Load("")
+	if err == nil {
+		prompts, err := config.LoadPrompts(cfg, "")
+		if err == nil {
+			bridge, err := sdk.NewBridge(cfg, prompts)
+			if err == nil {
+				m.bridge = bridge
+				m.useSDK = true
+			}
+		}
+	}
+
+	return m
 }
 
 type streamEvent struct {
@@ -97,134 +115,46 @@ func (m tuiModel) Init() tea.Cmd {
 	return tea.Batch(textinput.Blink, m.spinner.Tick)
 }
 
-func streamClaude(prompt string, sessionID string) tea.Cmd {
+func streamWithSDK(bridge *sdk.Bridge, prompt string, sessionID string) tea.Cmd {
 	return func() tea.Msg {
-		cwd, _ := os.Getwd()
-
-		args := []string{
-			"-p", prompt,
-			"--print",
-			"--output-format", "stream-json",
-			"--verbose",
-			"--permission-mode", "acceptEdits",
-		}
-
-		if sessionID != "" {
-			args = append(args, "--resume", sessionID)
-		}
-
-		cmd := exec.Command("claude", args...)
-		cmd.Dir = cwd
-
-		stdout, err := cmd.StdoutPipe()
-		if err != nil {
-			return streamEvent{EventType: "error", Error: err.Error(), Done: true}
-		}
-
-		if err := cmd.Start(); err != nil {
-			return streamEvent{EventType: "error", Error: err.Error(), Done: true}
-		}
-
-		scanner := bufio.NewScanner(stdout)
-		buf := make([]byte, 0, 1024*1024)
-		scanner.Buffer(buf, 10*1024*1024)
+		eventCh := make(chan sdk.Event, 100)
+		
+		go func() {
+			bridge.Chat(prompt, sessionID, eventCh)
+			close(eventCh)
+		}()
 
 		var result strings.Builder
 		var thinking strings.Builder
+		var reasoning strings.Builder
 		var tools []string
 		var capturedSessionID string
 
-		for scanner.Scan() {
-			line := scanner.Text()
-			if line == "" {
-				continue
-			}
-
-			var event map[string]any
-			if err := json.Unmarshal([]byte(line), &event); err != nil {
-				continue
-			}
-
-			eventType, _ := event["type"].(string)
-
-			if sid, ok := event["session_id"].(string); ok && capturedSessionID == "" {
-				capturedSessionID = sid
-			}
-
-			switch eventType {
-			case "system":
-				if sid, ok := event["session_id"].(string); ok {
-					capturedSessionID = sid
+		for event := range eventCh {
+			switch event.Type {
+			case sdk.EventSystem:
+				if event.SessionID != "" {
+					capturedSessionID = event.SessionID
 				}
-
-			case "content_block_start":
-				if cb, ok := event["content_block"].(map[string]any); ok {
-					blockType, _ := cb["type"].(string)
-					if blockType == "thinking" {
-						if t, ok := cb["thinking"].(string); ok {
-							thinking.WriteString(t)
-						}
-					}
+			case sdk.EventThinking:
+				thinking.Reset()
+				thinking.WriteString(event.Content)
+			case sdk.EventReasoning:
+				reasoning.Reset()
+				reasoning.WriteString(event.Content)
+			case sdk.EventText:
+				result.Reset()
+				result.WriteString(event.Content)
+			case sdk.EventToolStart:
+				tools = append(tools, event.Name)
+			case sdk.EventResult:
+				if event.SessionID != "" {
+					capturedSessionID = event.SessionID
 				}
-
-			case "content_block_delta":
-				if delta, ok := event["delta"].(map[string]any); ok {
-					deltaType, _ := delta["type"].(string)
-					switch deltaType {
-					case "thinking_delta":
-						if t, ok := delta["thinking"].(string); ok {
-							thinking.WriteString(t)
-						}
-					case "text_delta":
-						if t, ok := delta["text"].(string); ok {
-							result.WriteString(t)
-						}
-					}
-				}
-
-			case "assistant":
-				if msg, ok := event["message"].(map[string]any); ok {
-					if content, ok := msg["content"].([]any); ok {
-						for _, c := range content {
-							if block, ok := c.(map[string]any); ok {
-								blockType, _ := block["type"].(string)
-								switch blockType {
-								case "thinking":
-									if t, ok := block["thinking"].(string); ok && thinking.Len() == 0 {
-										thinking.WriteString(t)
-									}
-								case "text":
-									if text, ok := block["text"].(string); ok && result.Len() == 0 {
-										result.WriteString(text)
-									}
-								case "tool_use":
-									if name, ok := block["name"].(string); ok {
-										tools = append(tools, name)
-									}
-								}
-							}
-						}
-					}
-				}
-
-			case "tool":
-				if subtype, ok := event["subtype"].(string); ok && subtype == "start" {
-					if name, ok := event["name"].(string); ok {
-						tools = append(tools, name)
-					}
-				}
-
-			case "result":
-				if r, ok := event["result"].(string); ok && result.Len() == 0 {
-					result.WriteString(r)
-				}
-				if sid, ok := event["session_id"].(string); ok {
-					capturedSessionID = sid
-				}
+			case sdk.EventError:
+				return streamEvent{EventType: "error", Error: event.Message, Done: true}
 			}
 		}
-
-		cmd.Wait()
 
 		var sb strings.Builder
 
@@ -235,6 +165,16 @@ func streamClaude(prompt string, sessionID string) tea.Cmd {
 				thinkText = thinkText[:500] + "..."
 			}
 			sb.WriteString(thinkText)
+			sb.WriteString("\n\n")
+		}
+
+		if reasoning.Len() > 0 {
+			sb.WriteString("🧠 **추론 과정**\n")
+			reasonText := reasoning.String()
+			if len(reasonText) > 500 {
+				reasonText = reasonText[:500] + "..."
+			}
+			sb.WriteString(reasonText)
 			sb.WriteString("\n\n")
 		}
 
@@ -251,6 +191,32 @@ func streamClaude(prompt string, sessionID string) tea.Cmd {
 		}
 
 		return streamEvent{EventType: "done", Content: sb.String(), Done: true, SessionID: capturedSessionID}
+	}
+}
+
+func streamClaudeCLI(prompt string, sessionID string) tea.Cmd {
+	return func() tea.Msg {
+		cwd, _ := os.Getwd()
+
+		args := []string{
+			"-p", prompt,
+			"--print",
+			"--permission-mode", "acceptEdits",
+		}
+
+		if sessionID != "" {
+			args = append(args, "--resume", sessionID)
+		}
+
+		cmd := exec.Command("claude", args...)
+		cmd.Dir = cwd
+
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return streamEvent{EventType: "error", Error: err.Error(), Done: true}
+		}
+
+		return streamEvent{EventType: "done", Content: string(output), Done: true}
 	}
 }
 
@@ -316,7 +282,10 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.viewport.SetContent(m.renderContent())
 				m.viewport.GotoBottom()
 
-				return m, streamClaude(input, m.sessionID)
+				if m.useSDK && m.bridge != nil {
+					return m, streamWithSDK(m.bridge, input, m.sessionID)
+				}
+				return m, streamClaudeCLI(input, m.sessionID)
 			}
 		}
 

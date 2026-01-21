@@ -27,11 +27,33 @@ error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 step() { echo -e "${CYAN}[STEP]${NC} $1"; }
 
 check_go() {
-    if ! command -v go &> /dev/null; then
+    if command -v go &> /dev/null; then
+        GO_CMD="go"
+    elif [ -x "/usr/local/go/bin/go" ]; then
+        GO_CMD="/usr/local/go/bin/go"
+        export PATH="$PATH:/usr/local/go/bin"
+    else
         error "Go not found. Install from https://go.dev/dl/"
     fi
-    local version=$(go version | grep -oP 'go\d+\.\d+')
+    local version=$($GO_CMD version | grep -oP 'go\d+\.\d+')
     info "Found Go $version"
+}
+
+check_node() {
+    if ! command -v node &> /dev/null; then
+        error "Node.js not found. Install from https://nodejs.org/"
+    fi
+    local version=$(node --version)
+    info "Found Node.js $version"
+}
+
+build_sdk() {
+    step "Building SDK..."
+    cd "$SCRIPT_DIR/packages/sdk"
+    npm install --silent 2>/dev/null || npm install
+    npm run build
+    success "Built SDK"
+    cd "$SCRIPT_DIR"
 }
 
 generate_claude_md() {
@@ -116,13 +138,16 @@ EOF
 
 install() {
     check_go
+    check_node
 
     echo ""
     echo "╔═══════════════════════════════════════════════════════╗"
-    echo "║           Brainchain Installation (Go)                ║"
-    echo "║     Multi-Agent Orchestrator for Claude Code          ║"
+    echo "║           Brainchain Installation                     ║"
+    echo "║     Multi-Agent Orchestrator (Claude + Codex)         ║"
     echo "╚═══════════════════════════════════════════════════════╝"
     echo ""
+
+    build_sdk
 
     step "Building brainchain..."
     cd "$SCRIPT_DIR/cmd/chat"
@@ -134,6 +159,14 @@ install() {
     cp brainchain "$BIN_DIR/brainchain"
     chmod +x "$BIN_DIR/brainchain"
     success "Installed to $BIN_DIR/brainchain"
+
+    step "Installing SDK..."
+    mkdir -p "$CONFIG_DIR/sdk"
+    cp -r "$SCRIPT_DIR/packages/sdk/dist" "$CONFIG_DIR/sdk/"
+    cp "$SCRIPT_DIR/packages/sdk/package.json" "$CONFIG_DIR/sdk/"
+    cd "$CONFIG_DIR/sdk" && npm install --production --silent 2>/dev/null || npm install --production
+    success "Installed SDK to $CONFIG_DIR/sdk"
+    cd "$SCRIPT_DIR"
 
     setup_claude_code
     init_config
