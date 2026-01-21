@@ -140,6 +140,10 @@ prompt_file = "prompts/explore.md"
 agent = "claude-haiku-web"
 prompt_file = "prompts/librarian.md"
 
+[roles.analyst]
+agent = "claude-opus"
+prompt_file = "prompts/analyst.md"
+
 # === Workflow ===
 
 [[workflow.steps]]

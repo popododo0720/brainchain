@@ -76,6 +76,8 @@ type tuiModel struct {
 	sessionMgr      *session.Manager
 	sessions        []*session.Session
 	showSessionList bool
+
+	messageQueue []string
 }
 
 func newTUIModel() tuiModel {
@@ -214,6 +216,43 @@ func unique(slice []string) []string {
 	return result
 }
 
+func (m *tuiModel) processNextQueued() tea.Cmd {
+	if len(m.messageQueue) == 0 {
+		return nil
+	}
+
+	input := m.messageQueue[0]
+	m.messageQueue = m.messageQueue[1:]
+
+	m.streaming = true
+	m.status = "Processing..."
+	if len(m.messageQueue) > 0 {
+		m.status = fmt.Sprintf("Processing... (queued: %d)", len(m.messageQueue))
+	}
+	m.currentOutput.Reset()
+	m.streamCancel = make(chan struct{})
+
+	m.messages = append(m.messages, chatMessage{
+		msgType: msgUser,
+		content: input,
+		time:    time.Now(),
+	})
+
+	m.saveMessage("user", input)
+	m.viewport.SetContent(m.renderContent())
+	m.viewport.GotoBottom()
+
+	m.streamThinking.Reset()
+	m.streamReasoning.Reset()
+	m.streamText.Reset()
+	m.streamTools = nil
+
+	if m.useSDK && m.bridge != nil {
+		return startSDKStream(m.bridge, input, m.sessionID)
+	}
+	return streamClaudeCLI(input, m.sessionID)
+}
+
 func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
@@ -284,35 +323,42 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case tea.KeyEnter:
 			input := strings.TrimSpace(m.input.Value())
-			if input != "" && !m.streaming {
-				m.showWelcome = false
-				m.streaming = true
-				m.status = "Processing..."
-				m.currentOutput.Reset()
-				m.streamCancel = make(chan struct{})
-
-				m.messages = append(m.messages, chatMessage{
-					msgType: msgUser,
-					content: input,
-					time:    time.Now(),
-				})
-
-				m.saveMessage("user", input)
-
-				m.input.Reset()
-				m.viewport.SetContent(m.renderContent())
-				m.viewport.GotoBottom()
-
-				m.streamThinking.Reset()
-				m.streamReasoning.Reset()
-				m.streamText.Reset()
-				m.streamTools = nil
-
-				if m.useSDK && m.bridge != nil {
-					return m, startSDKStream(m.bridge, input, m.sessionID)
-				}
-				return m, streamClaudeCLI(input, m.sessionID)
+			if input == "" {
+				return m, nil
 			}
+			if m.streaming {
+				m.messageQueue = append(m.messageQueue, input)
+				m.input.Reset()
+				m.status = fmt.Sprintf("● Processing... (queued: %d)", len(m.messageQueue))
+				return m, nil
+			}
+			m.showWelcome = false
+			m.streaming = true
+			m.status = "Processing..."
+			m.currentOutput.Reset()
+			m.streamCancel = make(chan struct{})
+
+			m.messages = append(m.messages, chatMessage{
+				msgType: msgUser,
+				content: input,
+				time:    time.Now(),
+			})
+
+			m.saveMessage("user", input)
+
+			m.input.Reset()
+			m.viewport.SetContent(m.renderContent())
+			m.viewport.GotoBottom()
+
+			m.streamThinking.Reset()
+			m.streamReasoning.Reset()
+			m.streamText.Reset()
+			m.streamTools = nil
+
+			if m.useSDK && m.bridge != nil {
+				return m, startSDKStream(m.bridge, input, m.sessionID)
+			}
+			return m, streamClaudeCLI(input, m.sessionID)
 		}
 
 	case sdkEventMsg:
@@ -356,6 +402,10 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				})
 				m.viewport.SetContent(m.renderContent())
 				m.viewport.GotoBottom()
+				// Process next queued message if any
+				if cmd := m.processNextQueued(); cmd != nil {
+					return m, cmd
+				}
 				return m, nil
 			}
 
@@ -421,6 +471,11 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			m.viewport.SetContent(m.renderContent())
 			m.viewport.GotoBottom()
+
+			// Process next queued message if any
+			if cmd := m.processNextQueued(); cmd != nil {
+				return m, cmd
+			}
 		}
 
 	case spinner.TickMsg:
