@@ -48,7 +48,7 @@ type Executor struct {
 	maxWorkers int
 }
 
-func New(cfg *config.Config, prompts map[string]string) *Executor {
+func NewExecutor(cfg *config.Config, prompts map[string]string) *Executor {
 	return &Executor{
 		cfg:        cfg,
 		prompts:    prompts,

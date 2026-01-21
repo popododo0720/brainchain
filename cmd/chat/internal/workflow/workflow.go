@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
@@ -75,11 +74,11 @@ type Engine struct {
 	steps    []config.WorkflowStep
 	roleStep map[string]int
 	outputs  map[string]string
-	plan     map[string]any
+	plan     *Plan
 	cwd      string
 }
 
-func New(cfg *config.Config, prompts map[string]string, exec *executor.Executor, sess *session.Manager) *Engine {
+func NewEngine(cfg *config.Config, prompts map[string]string, exec *executor.Executor, sess *session.Manager) *Engine {
 	roleStep := make(map[string]int)
 	steps := []config.WorkflowStep{}
 	if cfg.Workflow != nil {
@@ -222,8 +221,7 @@ func (e *Engine) executeSingle(ctx context.Context, idx int, step config.Workflo
 }
 
 func (e *Engine) executePerTask(ctx context.Context, idx int, step config.WorkflowStep) *StepResult {
-	tasks, ok := e.plan["tasks"].([]any)
-	if !ok || len(tasks) == 0 {
+	if e.plan == nil || len(e.plan.Tasks) == 0 {
 		return &StepResult{
 			StepIndex: idx,
 			Role:      step.Role,
@@ -232,13 +230,9 @@ func (e *Engine) executePerTask(ctx context.Context, idx int, step config.Workfl
 		}
 	}
 
-	execTasks := make([]executor.Task, 0, len(tasks))
-	for i, t := range tasks {
-		task, ok := t.(map[string]any)
-		if !ok {
-			continue
-		}
-		taskID, _ := task["id"].(string)
+	execTasks := make([]executor.Task, 0, len(e.plan.Tasks))
+	for i, task := range e.plan.Tasks {
+		taskID := task.ID
 		if taskID == "" {
 			taskID = fmt.Sprintf("task%d", i+1)
 		}
@@ -291,7 +285,7 @@ func (e *Engine) buildPrompt(step config.WorkflowStep, initialPrompt string) str
 	}
 
 	if e.plan != nil && step.Role != "planner" {
-		planJSON, _ := json.MarshalIndent(e.plan, "", "  ")
+		planJSON, _ := json.MarshalIndent(e.plan.ToMap(), "", "  ")
 		parts = append(parts, fmt.Sprintf("Current Plan:\n```json\n%s\n```", planJSON))
 	}
 
@@ -301,43 +295,29 @@ func (e *Engine) buildPrompt(step config.WorkflowStep, initialPrompt string) str
 	return strings.Join(parts, "\n\n")
 }
 
-func (e *Engine) buildTaskPrompt(task map[string]any) string {
+func (e *Engine) buildTaskPrompt(task Task) string {
 	var lines []string
 
-	if id, ok := task["id"].(string); ok {
-		lines = append(lines, fmt.Sprintf("Task ID: %s", id))
+	if task.ID != "" {
+		lines = append(lines, fmt.Sprintf("Task ID: %s", task.ID))
 	}
-	if desc, ok := task["description"].(string); ok {
-		lines = append(lines, fmt.Sprintf("Description: %s", desc))
+	if task.Description != "" {
+		lines = append(lines, fmt.Sprintf("Description: %s", task.Description))
 	}
-	if files, ok := task["files"].([]any); ok {
-		var fileStrs []string
-		for _, f := range files {
-			if s, ok := f.(string); ok {
-				fileStrs = append(fileStrs, s)
-			}
-		}
-		lines = append(lines, fmt.Sprintf("Files: %s", strings.Join(fileStrs, ", ")))
+	if len(task.Files) > 0 {
+		lines = append(lines, fmt.Sprintf("Files: %s", strings.Join(task.Files, ", ")))
 	}
-	if criteria, ok := task["acceptance_criteria"].([]any); ok {
+	if len(task.AcceptanceCriteria) > 0 {
 		lines = append(lines, "Acceptance Criteria:")
-		for _, c := range criteria {
-			if s, ok := c.(string); ok {
-				lines = append(lines, fmt.Sprintf("  - %s", s))
-			}
+		for _, c := range task.AcceptanceCriteria {
+			lines = append(lines, fmt.Sprintf("  - %s", c))
 		}
 	}
 
-	if specs, ok := e.plan["specs"].([]any); ok {
+	if e.plan != nil && len(e.plan.Specs) > 0 {
 		lines = append(lines, "\nRelevant Specs:")
-		for _, s := range specs {
-			spec, ok := s.(map[string]any)
-			if !ok {
-				continue
-			}
-			file, _ := spec["file"].(string)
-			content, _ := spec["content"].(string)
-			lines = append(lines, fmt.Sprintf("--- %s ---\n%s", file, content))
+		for _, spec := range e.plan.Specs {
+			lines = append(lines, fmt.Sprintf("--- %s ---\n%s", spec.File, spec.Content))
 		}
 	}
 
@@ -345,18 +325,7 @@ func (e *Engine) buildTaskPrompt(task map[string]any) string {
 }
 
 func (e *Engine) parsePlan(output string) {
-	jsonRe := regexp.MustCompile("(?s)```(?:json)?\\s*\\n?([\\s\\S]*?)\\n?```")
-	matches := jsonRe.FindStringSubmatch(output)
-
-	var jsonStr string
-	if len(matches) > 1 {
-		jsonStr = matches[1]
-	} else {
-		jsonStr = output
-	}
-
-	var plan map[string]any
-	if err := json.Unmarshal([]byte(jsonStr), &plan); err == nil {
+	if plan, err := ParsePlan(output); err == nil {
 		e.plan = plan
 	}
 }
@@ -382,7 +351,12 @@ func (e *Engine) saveState(currentStep int, results []*StepResult) {
 		stepMaps[i] = r.ToMap()
 	}
 
-	e.session.SaveWorkflowState("", currentStep, stepMaps, e.plan, e.outputs)
+	var planMap map[string]any
+	if e.plan != nil {
+		planMap = e.plan.ToMap()
+	}
+
+	e.session.SaveWorkflowState("", currentStep, stepMaps, planMap, e.outputs)
 }
 
 func (e *Engine) GetInfo() map[string]any {
@@ -413,7 +387,7 @@ func (e *Engine) GetInfo() map[string]any {
 
 func (e *Engine) RestoreState(plan map[string]any, outputs map[string]string) {
 	if plan != nil {
-		e.plan = plan
+		e.plan = PlanFromMap(plan)
 	}
 	if outputs != nil {
 		e.outputs = outputs

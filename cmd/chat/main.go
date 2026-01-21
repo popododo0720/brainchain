@@ -101,7 +101,7 @@ Examples:
 		os.Exit(1)
 	}
 
-	exec := executor.New(cfg, prompts)
+	exec := executor.NewExecutor(cfg, prompts)
 
 	if *execRole != "" {
 		if *prompt == "" {
@@ -309,7 +309,7 @@ func cmdWorkflow(cfg *config.Config, prompts map[string]string, exec *executor.E
 	sess, _ := session.NewManager("", true)
 	defer sess.Close()
 
-	engine := workflow.New(cfg, prompts, exec, sess)
+	engine := workflow.NewEngine(cfg, prompts, exec, sess)
 
 	if !asJSON {
 		info := engine.GetInfo()
