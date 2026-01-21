@@ -32,9 +32,7 @@ func NewCodexAdapter(cfg *Config) *CodexAdapter {
 func (a *CodexAdapter) BuildCommand(prompt string, opts map[string]any) []string {
 	cmd := []string{a.Cfg.Command}
 
-	if model, ok := opts["model"].(string); ok && model != "" {
-		cmd = append(cmd, "-m", model)
-	} else if model, ok := a.Cfg.Extra["model"].(string); ok && model != "" {
+	if model, ok := a.GetOption(opts, "model"); ok {
 		cmd = append(cmd, "-m", model)
 	}
 
@@ -46,9 +44,7 @@ func (a *CodexAdapter) BuildCommand(prompt string, opts map[string]any) []string
 		}
 	}
 
-	if effort, ok := opts["reasoning_effort"].(string); ok && effort != "" {
-		cmd = append(cmd, "--reasoning-effort", effort)
-	} else if effort, ok := a.Cfg.Extra["reasoning_effort"].(string); ok && effort != "" {
+	if effort, ok := a.GetOption(opts, "reasoning_effort"); ok {
 		cmd = append(cmd, "--reasoning-effort", effort)
 	}
 

@@ -9,6 +9,7 @@ type ClaudeAdapter struct {
 	BaseAdapter
 }
 
+// NewClaudeAdapter creates a Claude adapter with optional config
 func NewClaudeAdapter(cfg *Config) *ClaudeAdapter {
 	if cfg == nil {
 		defaultCfg := Config{
@@ -29,6 +30,45 @@ func NewClaudeAdapter(cfg *Config) *ClaudeAdapter {
 	}
 }
 
+// NewClaudeAdapterWithModel creates a Claude adapter for a specific model variant
+func NewClaudeAdapterWithModel(model string) *ClaudeAdapter {
+	displayNames := map[string]string{
+		"":       "Claude Code",
+		"sonnet": "Claude Sonnet",
+		"opus":   "Claude Opus",
+		"haiku":  "Claude Haiku",
+	}
+
+	adapterName := "claude"
+	if model != "" {
+		adapterName = "claude-" + model
+	}
+
+	display := displayNames[model]
+	if display == "" {
+		display = "Claude " + model
+	}
+
+	cfg := Config{
+		Command: "claude",
+		Args:    []string{"-p", "{prompt}", "--print", "--permission-mode", "acceptEdits"},
+		Timeout: 5 * time.Minute,
+		Extra:   map[string]any{},
+	}
+
+	if model != "" {
+		cfg.Extra["model"] = model
+	}
+
+	return &ClaudeAdapter{
+		BaseAdapter: BaseAdapter{
+			AdapterName:    adapterName,
+			AdapterDisplay: display,
+			Cfg:            cfg,
+		},
+	}
+}
+
 func (a *ClaudeAdapter) BuildCommand(prompt string, opts map[string]any) []string {
 	cmd := []string{a.Cfg.Command}
 
@@ -40,15 +80,11 @@ func (a *ClaudeAdapter) BuildCommand(prompt string, opts map[string]any) []strin
 		}
 	}
 
-	if model, ok := opts["model"].(string); ok && model != "" {
-		cmd = append(cmd, "--model", model)
-	} else if model, ok := a.Cfg.Extra["model"].(string); ok && model != "" {
+	if model, ok := a.GetOption(opts, "model"); ok {
 		cmd = append(cmd, "--model", model)
 	}
 
-	if tools, ok := opts["allowed_tools"].(string); ok && tools != "" {
-		cmd = append(cmd, "--allowedTools", tools)
-	} else if tools, ok := a.Cfg.Extra["allowed_tools"].(string); ok && tools != "" {
+	if tools, ok := a.GetOption(opts, "allowed_tools"); ok {
 		cmd = append(cmd, "--allowedTools", tools)
 	}
 
@@ -57,73 +93,4 @@ func (a *ClaudeAdapter) BuildCommand(prompt string, opts map[string]any) []strin
 
 func (a *ClaudeAdapter) Run(ctx context.Context, prompt string, cwd string, opts map[string]any) (*Result, error) {
 	return a.BaseAdapter.Run(ctx, prompt, cwd, opts, a.BuildCommand)
-}
-
-type ClaudeSonnetAdapter struct {
-	ClaudeAdapter
-}
-
-func NewClaudeSonnetAdapter() *ClaudeSonnetAdapter {
-	cfg := Config{
-		Command: "claude",
-		Args:    []string{"-p", "{prompt}", "--print", "--permission-mode", "acceptEdits"},
-		Timeout: 5 * time.Minute,
-		Extra:   map[string]any{"model": "sonnet"},
-	}
-
-	return &ClaudeSonnetAdapter{
-		ClaudeAdapter: ClaudeAdapter{
-			BaseAdapter: BaseAdapter{
-				AdapterName:    "claude-sonnet",
-				AdapterDisplay: "Claude Sonnet",
-				Cfg:            cfg,
-			},
-		},
-	}
-}
-
-type ClaudeOpusAdapter struct {
-	ClaudeAdapter
-}
-
-func NewClaudeOpusAdapter() *ClaudeOpusAdapter {
-	cfg := Config{
-		Command: "claude",
-		Args:    []string{"-p", "{prompt}", "--print", "--permission-mode", "acceptEdits"},
-		Timeout: 5 * time.Minute,
-		Extra:   map[string]any{"model": "opus"},
-	}
-
-	return &ClaudeOpusAdapter{
-		ClaudeAdapter: ClaudeAdapter{
-			BaseAdapter: BaseAdapter{
-				AdapterName:    "claude-opus",
-				AdapterDisplay: "Claude Opus",
-				Cfg:            cfg,
-			},
-		},
-	}
-}
-
-type ClaudeHaikuAdapter struct {
-	ClaudeAdapter
-}
-
-func NewClaudeHaikuAdapter() *ClaudeHaikuAdapter {
-	cfg := Config{
-		Command: "claude",
-		Args:    []string{"-p", "{prompt}", "--print", "--permission-mode", "acceptEdits"},
-		Timeout: 5 * time.Minute,
-		Extra:   map[string]any{"model": "haiku"},
-	}
-
-	return &ClaudeHaikuAdapter{
-		ClaudeAdapter: ClaudeAdapter{
-			BaseAdapter: BaseAdapter{
-				AdapterName:    "claude-haiku",
-				AdapterDisplay: "Claude Haiku",
-				Cfg:            cfg,
-			},
-		},
-	}
 }

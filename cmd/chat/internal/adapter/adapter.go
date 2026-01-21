@@ -75,6 +75,19 @@ func (a *BaseAdapter) GetConfig() *Config {
 	return &a.Cfg
 }
 
+// GetOption retrieves an option value from opts or falls back to Config.Extra
+func (a *BaseAdapter) GetOption(opts map[string]any, key string) (string, bool) {
+	if opts != nil {
+		if v, ok := opts[key].(string); ok && v != "" {
+			return v, true
+		}
+	}
+	if v, ok := a.Cfg.Extra[key].(string); ok && v != "" {
+		return v, true
+	}
+	return "", false
+}
+
 func (a *BaseAdapter) ParseOutput(output string) string {
 	ansiRegex := regexp.MustCompile(`\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])`)
 	output = ansiRegex.ReplaceAllString(output, "")

@@ -3,10 +3,10 @@ package adapter
 import "os/exec"
 
 var registry = map[string]func() Adapter{
-	"claude":        func() Adapter { return NewClaudeAdapter(nil) },
-	"claude-sonnet": func() Adapter { return NewClaudeSonnetAdapter() },
-	"claude-opus":   func() Adapter { return NewClaudeOpusAdapter() },
-	"claude-haiku":  func() Adapter { return NewClaudeHaikuAdapter() },
+	"claude":        func() Adapter { return NewClaudeAdapterWithModel("") },
+	"claude-sonnet": func() Adapter { return NewClaudeAdapterWithModel("sonnet") },
+	"claude-opus":   func() Adapter { return NewClaudeAdapterWithModel("opus") },
+	"claude-haiku":  func() Adapter { return NewClaudeAdapterWithModel("haiku") },
 	"codex":         func() Adapter { return NewCodexAdapter(nil) },
 }
 
