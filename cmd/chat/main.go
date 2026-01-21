@@ -149,20 +149,6 @@ func launchOrchestrator(configPath, cwd string) error {
 		return fmt.Errorf("orchestrator agent '%s' not found", cfg.Orchestrator.Agent)
 	}
 
-	var args []string
-
-	switch agent.Command {
-	case "claude":
-		args = []string{"--permission-mode", "acceptEdits"}
-	case "codex":
-		args = []string{"--full-auto", "--skip-git-repo-check"}
-		if agent.ReasoningEffort != "" {
-			args = append(args, "-c", fmt.Sprintf("model_reasoning_effort=\"%s\"", agent.ReasoningEffort))
-		}
-	default:
-		args = agent.Args
-	}
-
 	binary, err := exec.LookPath(agent.Command)
 	if err != nil {
 		return fmt.Errorf("%s not found in PATH", agent.Command)
@@ -173,7 +159,7 @@ func launchOrchestrator(configPath, cwd string) error {
 		return err
 	}
 
-	return syscall.Exec(binary, append([]string{agent.Command}, args...), env)
+	return syscall.Exec(binary, append([]string{agent.Command}, agent.Args...), env)
 }
 
 func cmdInit() error {
