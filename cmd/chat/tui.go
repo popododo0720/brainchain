@@ -62,7 +62,9 @@ type tuiModel struct {
 	sessionID      string
 	bridge         *sdk.Bridge
 	useSDK         bool
-	
+	agentName      string
+	modelName      string
+
 	streamThinking  strings.Builder
 	streamReasoning strings.Builder
 	streamText      strings.Builder
@@ -99,6 +101,8 @@ func newTUIModel() tuiModel {
 		showWelcome: true,
 		status:      "ready",
 		useSDK:      false,
+		agentName:   "claude",
+		modelName:   "default",
 	}
 
 	if mgr, err := session.NewManager("", true); err == nil {
@@ -107,6 +111,13 @@ func newTUIModel() tuiModel {
 
 	cfg, err := config.Load("")
 	if err == nil {
+		m.agentName = cfg.Orchestrator.Agent
+		if agent, ok := cfg.Agents[cfg.Orchestrator.Agent]; ok {
+			if agent.Model != "" {
+				m.modelName = agent.Model
+			}
+		}
+
 		prompts, err := config.LoadPrompts(cfg, "")
 		if err == nil {
 			bridge, err := sdk.NewBridge(cfg, prompts)
@@ -209,9 +220,14 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 
 		headerHeight := 1
-		footerHeight := 1
+		statusBarHeight := 1
 		inputHeight := 3
-		viewportHeight := m.height - headerHeight - footerHeight - inputHeight
+		footerHeight := 1
+		viewportHeight := m.height - headerHeight - statusBarHeight - inputHeight - footerHeight
+
+		if viewportHeight < 3 {
+			viewportHeight = 3
+		}
 
 		if !m.ready {
 			m.viewport = viewport.New(m.width, viewportHeight)
@@ -220,6 +236,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.viewport.Width = m.width
 			m.viewport.Height = viewportHeight
+			m.viewport.SetContent(m.renderContent())
 		}
 
 		m.input.Width = m.width - 8
@@ -490,14 +507,8 @@ func (m tuiModel) renderMessages() string {
 		roleStyle := lipgloss.NewStyle().Foreground(textMuted)
 		contentStyle := lipgloss.NewStyle().Foreground(textColor)
 		thinkStyle := lipgloss.NewStyle().Foreground(thinkingColor)
-		hintStyle := lipgloss.NewStyle().Foreground(textMuted).Italic(true)
 
 		var streamContent strings.Builder
-		streamContent.WriteString(m.spinner.View() + " ")
-		streamContent.WriteString(lipgloss.NewStyle().Foreground(accentColor).Bold(true).Render(m.status))
-		streamContent.WriteString("  ")
-		streamContent.WriteString(hintStyle.Render("ESC interrupt"))
-		streamContent.WriteString("\n\n")
 
 		if m.streamThinking.Len() > 0 {
 			thinkText := m.streamThinking.String()
@@ -512,6 +523,10 @@ func (m tuiModel) renderMessages() string {
 			streamContent.WriteString(contentStyle.Render(m.streamText.String()))
 		}
 
+		if streamContent.Len() == 0 {
+			streamContent.WriteString(lipgloss.NewStyle().Foreground(textMuted).Italic(true).Render("waiting for response..."))
+		}
+
 		sb.WriteString("\n")
 		sb.WriteString(panelStyle.Render(roleStyle.Render("AI") + "\n" + streamContent.String()))
 	}
@@ -524,43 +539,88 @@ func (m tuiModel) View() string {
 		return "초기화 중..."
 	}
 
+	// === Header ===
 	headerStyle := lipgloss.NewStyle().Foreground(accentColor).Bold(true).Padding(0, 1)
 	header := headerStyle.Render("⌬ brainchain")
 
-	statusStyle := lipgloss.NewStyle().Foreground(textMuted).Padding(0, 1)
-	status := statusStyle.Render(fmt.Sprintf("claude • %d messages", len(m.messages)))
+	modelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7aa2f7")).Padding(0, 1)
+	modelInfo := modelStyle.Render(fmt.Sprintf("%s/%s", m.agentName, m.modelName))
 
-	headerLine := lipgloss.JoinHorizontal(lipgloss.Top,
-		header,
-		lipgloss.NewStyle().Width(m.width-lipgloss.Width(header)-lipgloss.Width(status)).Render(""),
-		status,
-	)
+	msgCountStyle := lipgloss.NewStyle().Foreground(textMuted).Padding(0, 1)
+	msgCount := msgCountStyle.Render(fmt.Sprintf("%d msgs", len(m.messages)))
 
+	headerRight := lipgloss.JoinHorizontal(lipgloss.Top, modelInfo, msgCount)
+	headerGap := m.width - lipgloss.Width(header) - lipgloss.Width(headerRight)
+	if headerGap < 0 {
+		headerGap = 0
+	}
+	headerLine := header + strings.Repeat(" ", headerGap) + headerRight
+
+	// === Status Bar (above input) ===
+	statusBar := m.renderStatusBar()
+
+	// === Input Area ===
 	inputBoxStyle := lipgloss.NewStyle().Background(bgPanel).Padding(1, 1).Width(m.width)
 	inputArea := inputBoxStyle.Render(m.input.View())
 
+	// === Footer ===
 	footerStyle := lipgloss.NewStyle().Foreground(textMuted).Padding(0, 1)
 	hintStyle := lipgloss.NewStyle().Foreground(textMuted)
 	keyStyle := lipgloss.NewStyle().Foreground(accentColor)
-	
+
 	cwd, _ := os.Getwd()
+	if len(cwd) > 40 {
+		cwd = "..." + cwd[len(cwd)-37:]
+	}
 	cwdText := hintStyle.Render(cwd)
 	shortcuts := keyStyle.Render("Ctrl+P") + hintStyle.Render(" cmd  ") +
 		keyStyle.Render("Ctrl+Q") + hintStyle.Render(" quit")
-	
+
 	gap := m.width - lipgloss.Width(cwdText) - lipgloss.Width(shortcuts) - 4
 	if gap < 1 {
 		gap = 1
 	}
 	footer := footerStyle.Render(cwdText + strings.Repeat(" ", gap) + shortcuts)
 
-	base := lipgloss.JoinVertical(lipgloss.Left, headerLine, m.viewport.View(), inputArea, footer)
+	base := lipgloss.JoinVertical(lipgloss.Left, headerLine, m.viewport.View(), statusBar, inputArea, footer)
 
 	if m.showPalette || m.showSessionList {
 		return m.renderWithOverlay(base)
 	}
 
 	return base
+}
+
+func (m tuiModel) renderStatusBar() string {
+	statusStyle := lipgloss.NewStyle().
+		Background(lipgloss.Color("#2a2a3a")).
+		Foreground(textColor).
+		Width(m.width).
+		Padding(0, 1)
+
+	if m.streaming {
+		spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+		frame := spinnerFrames[time.Now().UnixMilli()/80%int64(len(spinnerFrames))]
+
+		spinnerStyle := lipgloss.NewStyle().Foreground(accentColor).Bold(true)
+		statusTextStyle := lipgloss.NewStyle().Foreground(accentColor)
+		hintStyle := lipgloss.NewStyle().Foreground(textMuted).Italic(true)
+		escStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#f7768e")).Bold(true)
+
+		left := spinnerStyle.Render(frame) + " " + statusTextStyle.Render(m.status)
+		right := escStyle.Render("ESC") + hintStyle.Render(" interrupt")
+
+		gap := m.width - lipgloss.Width(left) - lipgloss.Width(right) - 4
+		if gap < 0 {
+			gap = 0
+		}
+
+		return statusStyle.Render(left + strings.Repeat(" ", gap) + right)
+	}
+
+	// Not streaming - show ready status
+	readyStyle := lipgloss.NewStyle().Foreground(thinkingColor)
+	return statusStyle.Render(readyStyle.Render("● ready"))
 }
 
 func runTUI() error {
