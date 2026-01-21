@@ -544,10 +544,15 @@ func (m tuiModel) View() string {
 	keyStyle := lipgloss.NewStyle().Foreground(accentColor)
 	
 	cwd, _ := os.Getwd()
-	hints := hintStyle.Render(cwd + "  ") +
-		keyStyle.Render("Ctrl+P") + hintStyle.Render(" cmd  ") +
+	cwdText := hintStyle.Render(cwd)
+	shortcuts := keyStyle.Render("Ctrl+P") + hintStyle.Render(" cmd  ") +
 		keyStyle.Render("Ctrl+Q") + hintStyle.Render(" quit")
-	footer := footerStyle.Render(hints)
+	
+	gap := m.width - lipgloss.Width(cwdText) - lipgloss.Width(shortcuts) - 4
+	if gap < 1 {
+		gap = 1
+	}
+	footer := footerStyle.Render(cwdText + strings.Repeat(" ", gap) + shortcuts)
 
 	base := lipgloss.JoinVertical(lipgloss.Left, headerLine, m.viewport.View(), inputArea, footer)
 
