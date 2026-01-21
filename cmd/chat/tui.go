@@ -9,7 +9,9 @@ import (
 
 	"brainchain/cmd/chat/internal/config"
 	"brainchain/cmd/chat/internal/sdk"
+	"brainchain/cmd/chat/internal/session"
 
+	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -65,6 +67,13 @@ type tuiModel struct {
 	streamReasoning strings.Builder
 	streamText      strings.Builder
 	streamTools     []string
+	streamCancel    chan struct{}
+
+	showPalette     bool
+	paletteList     list.Model
+	sessionMgr      *session.Manager
+	sessions        []*session.Session
+	showSessionList bool
 }
 
 func newTUIModel() tuiModel {
@@ -90,6 +99,10 @@ func newTUIModel() tuiModel {
 		showWelcome: true,
 		status:      "ready",
 		useSDK:      false,
+	}
+
+	if mgr, err := session.NewManager("", true); err == nil {
+		m.sessionMgr = mgr
 	}
 
 	cfg, err := config.Load("")
@@ -212,12 +225,39 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.input.Width = m.width - 8
 
 	case tea.KeyMsg:
+		if m.showPalette || m.showSessionList {
+			return m.handlePaletteKeys(msg)
+		}
+
 		switch msg.Type {
-		case tea.KeyCtrlC, tea.KeyEsc:
-			if m.cmd != nil && m.cmd.Process != nil {
-				m.cmd.Process.Kill()
+		case tea.KeyCtrlQ:
+			if m.sessionMgr != nil {
+				m.sessionMgr.Close()
 			}
 			return m, tea.Quit
+
+		case tea.KeyEsc:
+			if m.streaming {
+				if m.streamCancel != nil {
+					close(m.streamCancel)
+					m.streamCancel = nil
+				}
+				m.streaming = false
+				m.status = "중단됨"
+				m.messages = append(m.messages, chatMessage{
+					msgType: msgAssistant,
+					content: "⚠️ 대화가 중단되었습니다.",
+					time:    time.Now(),
+				})
+				m.viewport.SetContent(m.renderContent())
+				m.viewport.GotoBottom()
+			}
+			return m, nil
+
+		case tea.KeyCtrlP:
+			m.showPalette = true
+			m.paletteList = m.createPaletteList()
+			return m, nil
 
 		case tea.KeyEnter:
 			input := strings.TrimSpace(m.input.Value())
@@ -226,12 +266,15 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.streaming = true
 				m.status = "처리 중..."
 				m.currentOutput.Reset()
+				m.streamCancel = make(chan struct{})
 
 				m.messages = append(m.messages, chatMessage{
 					msgType: msgUser,
 					content: input,
 					time:    time.Now(),
 				})
+
+				m.saveMessage("user", input)
 
 				m.input.Reset()
 				m.viewport.SetContent(m.renderContent())
@@ -495,16 +538,186 @@ func (m tuiModel) View() string {
 	cwd, _ := os.Getwd()
 	footer := footerStyle.Render(cwd)
 
-	return lipgloss.JoinVertical(lipgloss.Left, headerLine, m.viewport.View(), inputArea, footer)
+	base := lipgloss.JoinVertical(lipgloss.Left, headerLine, m.viewport.View(), inputArea, footer)
+
+	if m.showPalette || m.showSessionList {
+		return m.renderWithOverlay(base)
+	}
+
+	return base
 }
 
 func runTUI() error {
 	p := tea.NewProgram(
 		newTUIModel(),
 		tea.WithAltScreen(),
-		tea.WithInputTTY(),
+		tea.WithMouseCellMotion(),
 	)
 
 	_, err := p.Run()
 	return err
+}
+
+type paletteItem struct {
+	title string
+	desc  string
+	cmd   string
+}
+
+func (i paletteItem) Title() string       { return i.title }
+func (i paletteItem) Description() string { return i.desc }
+func (i paletteItem) FilterValue() string { return i.title }
+
+func (m *tuiModel) createPaletteList() list.Model {
+	items := []list.Item{
+		paletteItem{"Switch Session", "이전 세션으로 전환", "switch_session"},
+		paletteItem{"New Session", "새 세션 시작", "new_session"},
+		paletteItem{"Clear Messages", "현재 대화 지우기", "clear"},
+	}
+
+	delegate := list.NewDefaultDelegate()
+	delegate.Styles.SelectedTitle = delegate.Styles.SelectedTitle.Foreground(accentColor)
+	delegate.Styles.SelectedDesc = delegate.Styles.SelectedDesc.Foreground(textMuted)
+
+	l := list.New(items, delegate, 40, 10)
+	l.Title = "Command Palette"
+	l.SetShowStatusBar(false)
+	l.SetFilteringEnabled(true)
+	l.Styles.Title = lipgloss.NewStyle().Foreground(accentColor).Bold(true)
+
+	return l
+}
+
+func (m *tuiModel) createSessionList() list.Model {
+	var items []list.Item
+
+	if m.sessionMgr != nil {
+		sessions, _ := m.sessionMgr.ListSessions("", 20)
+		m.sessions = sessions
+		for _, s := range sessions {
+			preview := s.InitialPrompt
+			if len(preview) > 40 {
+				preview = preview[:40] + "..."
+			}
+			items = append(items, paletteItem{
+				title: s.DisplayName(),
+				desc:  preview,
+				cmd:   s.ID,
+			})
+		}
+	}
+
+	if len(items) == 0 {
+		items = append(items, paletteItem{"No sessions", "세션이 없습니다", ""})
+	}
+
+	delegate := list.NewDefaultDelegate()
+	l := list.New(items, delegate, 50, 15)
+	l.Title = "Sessions"
+	l.SetShowStatusBar(false)
+	l.SetFilteringEnabled(true)
+	l.Styles.Title = lipgloss.NewStyle().Foreground(accentColor).Bold(true)
+
+	return l
+}
+
+func (m tuiModel) handlePaletteKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		m.showPalette = false
+		m.showSessionList = false
+		return m, nil
+
+	case tea.KeyEnter:
+		if m.showSessionList {
+			if item, ok := m.paletteList.SelectedItem().(paletteItem); ok && item.cmd != "" {
+				m.switchToSession(item.cmd)
+			}
+			m.showSessionList = false
+			m.showPalette = false
+			return m, nil
+		}
+
+		if item, ok := m.paletteList.SelectedItem().(paletteItem); ok {
+			switch item.cmd {
+			case "switch_session":
+				m.showPalette = false
+				m.showSessionList = true
+				m.paletteList = m.createSessionList()
+			case "new_session":
+				m.startNewSession()
+				m.showPalette = false
+			case "clear":
+				m.messages = nil
+				m.showWelcome = true
+				m.showPalette = false
+				m.viewport.SetContent(m.renderContent())
+			}
+		}
+		return m, nil
+	}
+
+	var cmd tea.Cmd
+	m.paletteList, cmd = m.paletteList.Update(msg)
+	return m, cmd
+}
+
+func (m tuiModel) renderWithOverlay(base string) string {
+	overlay := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(accentColor).
+		Background(lipgloss.Color("#1e1e2e")).
+		Padding(1, 2).
+		Width(m.width / 2).
+		Render(m.paletteList.View())
+
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, overlay,
+		lipgloss.WithWhitespaceBackground(lipgloss.Color("#00000088")))
+}
+
+func (m *tuiModel) saveMessage(role, content string) {
+	if m.sessionMgr == nil {
+		return
+	}
+	m.sessionMgr.AddMessage(m.sessionID, role, content, nil, "")
+}
+
+func (m *tuiModel) startNewSession() {
+	if m.sessionMgr == nil {
+		return
+	}
+	m.messages = nil
+	m.showWelcome = true
+	m.sessionID = ""
+	cwd, _ := os.Getwd()
+	if sess, err := m.sessionMgr.CreateSession("", cwd, "chat", nil); err == nil && sess != nil {
+		m.sessionID = sess.ID
+	}
+	m.viewport.SetContent(m.renderContent())
+}
+
+func (m *tuiModel) switchToSession(sessionID string) {
+	if m.sessionMgr == nil {
+		return
+	}
+
+	m.sessionID = sessionID
+	m.messages = nil
+	m.showWelcome = false
+
+	msgs, _ := m.sessionMgr.GetMessages(sessionID)
+	for _, msg := range msgs {
+		msgType := msgAssistant
+		if msg.Role == "user" {
+			msgType = msgUser
+		}
+		m.messages = append(m.messages, chatMessage{
+			msgType: msgType,
+			content: msg.Content,
+			time:    msg.Timestamp,
+		})
+	}
+
+	m.viewport.SetContent(m.renderContent())
+	m.viewport.GotoBottom()
 }
