@@ -78,7 +78,7 @@ type tuiModel struct {
 
 func newTUIModel() tuiModel {
 	ti := textinput.New()
-	ti.Placeholder = "메시지를 입력하세요..."
+	ti.Placeholder = "Type a message..."
 	ti.Focus()
 	ti.CharLimit = 4096
 	ti.Width = 80
@@ -243,10 +243,10 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.streamCancel = nil
 				}
 				m.streaming = false
-				m.status = "중단됨"
+				m.status = "Interrupted"
 				m.messages = append(m.messages, chatMessage{
 					msgType: msgAssistant,
-					content: "⚠️ 대화가 중단되었습니다.",
+					content: "⚠️ Interrupted",
 					time:    time.Now(),
 				})
 				m.viewport.SetContent(m.renderContent())
@@ -264,7 +264,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if input != "" && !m.streaming {
 				m.showWelcome = false
 				m.streaming = true
-				m.status = "처리 중..."
+				m.status = "Processing..."
 				m.currentOutput.Reset()
 				m.streamCancel = make(chan struct{})
 
@@ -306,15 +306,15 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case sdk.EventThinking:
 			m.streamThinking.Reset()
 			m.streamThinking.WriteString(event.Content)
-			m.status = "💭 사고 중..."
+			m.status = "💭 Thinking..."
 		case sdk.EventReasoning:
 			m.streamReasoning.Reset()
 			m.streamReasoning.WriteString(event.Content)
-			m.status = "🧠 추론 중..."
+			m.status = "🧠 Reasoning..."
 		case sdk.EventText:
 			m.streamText.Reset()
 			m.streamText.WriteString(event.Content)
-			m.status = "✍️ 작성 중..."
+			m.status = "✍️ Writing..."
 		case sdk.EventToolStart:
 			m.streamTools = append(m.streamTools, event.Name)
 			m.status = "🔧 " + event.Name
@@ -323,7 +323,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "ready"
 			m.messages = append(m.messages, chatMessage{
 				msgType: msgAssistant,
-				content: "❌ 오류: " + event.Message,
+				content: "❌ Error: " + event.Message,
 				time:    time.Now(),
 			})
 			m.viewport.SetContent(m.renderContent())
@@ -350,7 +350,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				var sb strings.Builder
 				if m.streamThinking.Len() > 0 {
-					sb.WriteString("💭 **사고 과정**\n")
+					sb.WriteString("💭 **Thinking**\n")
 					thinkText := m.streamThinking.String()
 					if len(thinkText) > 500 {
 						thinkText = thinkText[:500] + "..."
@@ -359,7 +359,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					sb.WriteString("\n\n")
 				}
 				if m.streamReasoning.Len() > 0 {
-					sb.WriteString("🧠 **추론 과정**\n")
+					sb.WriteString("🧠 **Reasoning**\n")
 					reasonText := m.streamReasoning.String()
 					if len(reasonText) > 500 {
 						reasonText = reasonText[:500] + "..."
@@ -368,20 +368,20 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					sb.WriteString("\n\n")
 				}
 				if len(m.streamTools) > 0 {
-					sb.WriteString("🔧 **사용된 도구**: ")
+					sb.WriteString("🔧 **Tools**: ")
 					sb.WriteString(strings.Join(unique(m.streamTools), ", "))
 					sb.WriteString("\n\n")
 				}
 				if m.streamText.Len() > 0 {
 					sb.WriteString(m.streamText.String())
 				} else {
-					sb.WriteString("(응답 없음)")
+					sb.WriteString("(No response)")
 				}
 				content = sb.String()
 			}
 
 			if msg.Error != "" {
-				content = "❌ 오류: " + msg.Error
+				content = "❌ Error: " + msg.Error
 			}
 
 			m.messages = append(m.messages, chatMessage{
@@ -431,7 +431,7 @@ func (m tuiModel) renderWelcome() string {
 	subtitle := subtitleStyle.Render("Multi-Agent Orchestrator")
 
 	helpStyle := lipgloss.NewStyle().Foreground(textMuted).MarginTop(2)
-	help := helpStyle.Render("메시지를 입력하고 Enter • Ctrl+C 종료")
+	help := helpStyle.Render("Type message and Enter • Ctrl+Q to quit")
 
 	content := lipgloss.JoinVertical(lipgloss.Center, logo, subtitle, help)
 	return lipgloss.Place(m.width, m.viewport.Height, lipgloss.Center, lipgloss.Center, content)
@@ -453,7 +453,7 @@ func (m tuiModel) renderMessages() string {
 			roleLabel = "AI"
 		case msgThinking:
 			borderCol = thinkingColor
-			roleLabel = "💭 사고"
+			roleLabel = "💭 Think"
 		case msgTool:
 			borderCol = toolColor
 			roleLabel = "🔧 " + msg.toolName
@@ -490,9 +490,14 @@ func (m tuiModel) renderMessages() string {
 		roleStyle := lipgloss.NewStyle().Foreground(textMuted)
 		contentStyle := lipgloss.NewStyle().Foreground(textColor)
 		thinkStyle := lipgloss.NewStyle().Foreground(thinkingColor)
+		hintStyle := lipgloss.NewStyle().Foreground(textMuted).Italic(true)
 
 		var streamContent strings.Builder
-		streamContent.WriteString(m.spinner.View() + " " + m.status + "\n\n")
+		streamContent.WriteString(m.spinner.View() + " ")
+		streamContent.WriteString(lipgloss.NewStyle().Foreground(accentColor).Bold(true).Render(m.status))
+		streamContent.WriteString("  ")
+		streamContent.WriteString(hintStyle.Render("ESC interrupt"))
+		streamContent.WriteString("\n\n")
 
 		if m.streamThinking.Len() > 0 {
 			thinkText := m.streamThinking.String()
@@ -523,7 +528,7 @@ func (m tuiModel) View() string {
 	header := headerStyle.Render("⌬ brainchain")
 
 	statusStyle := lipgloss.NewStyle().Foreground(textMuted).Padding(0, 1)
-	status := statusStyle.Render(fmt.Sprintf("claude • %d개 메시지", len(m.messages)))
+	status := statusStyle.Render(fmt.Sprintf("claude • %d messages", len(m.messages)))
 
 	headerLine := lipgloss.JoinHorizontal(lipgloss.Top,
 		header,
@@ -535,8 +540,14 @@ func (m tuiModel) View() string {
 	inputArea := inputBoxStyle.Render(m.input.View())
 
 	footerStyle := lipgloss.NewStyle().Foreground(textMuted).Padding(0, 1)
+	hintStyle := lipgloss.NewStyle().Foreground(textMuted)
+	keyStyle := lipgloss.NewStyle().Foreground(accentColor)
+	
 	cwd, _ := os.Getwd()
-	footer := footerStyle.Render(cwd)
+	hints := hintStyle.Render(cwd + "  ") +
+		keyStyle.Render("Ctrl+P") + hintStyle.Render(" cmd  ") +
+		keyStyle.Render("Ctrl+Q") + hintStyle.Render(" quit")
+	footer := footerStyle.Render(hints)
 
 	base := lipgloss.JoinVertical(lipgloss.Left, headerLine, m.viewport.View(), inputArea, footer)
 
@@ -570,8 +581,8 @@ func (i paletteItem) FilterValue() string { return i.title }
 
 func (m *tuiModel) createPaletteList() list.Model {
 	items := []list.Item{
-		paletteItem{"Switch Session", "이전 세션으로 전환", "switch_session"},
-		paletteItem{"New Session", "새 세션 시작", "new_session"},
+		paletteItem{"Switch Session", "Switch to previous session", "switch_session"},
+		paletteItem{"New Session", "Start new session", "new_session"},
 		paletteItem{"Clear Messages", "현재 대화 지우기", "clear"},
 	}
 
@@ -608,7 +619,7 @@ func (m *tuiModel) createSessionList() list.Model {
 	}
 
 	if len(items) == 0 {
-		items = append(items, paletteItem{"No sessions", "세션이 없습니다", ""})
+		items = append(items, paletteItem{"No sessions", "No sessions found", ""})
 	}
 
 	delegate := list.NewDefaultDelegate()
