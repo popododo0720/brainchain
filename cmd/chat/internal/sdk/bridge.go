@@ -82,9 +82,10 @@ type CodexRequest struct {
 
 // Bridge manages SDK subprocess communication
 type Bridge struct {
-	sdkPath   string
-	sdkConfig SDKConfig
-	mu        sync.Mutex
+	sdkPath    string
+	sdkConfig  SDKConfig
+	mu         sync.Mutex
+	currentCmd *exec.Cmd
 }
 
 // NewBridge creates a new SDK bridge from config
@@ -185,9 +186,6 @@ type StreamResult struct {
 
 // Chat streams a chat request through the SDK
 func (b *Bridge) Chat(prompt, sessionID string, eventCh chan<- Event) (*StreamResult, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
 	req := ChatRequest{
 		Action:    "chat",
 		Prompt:    prompt,
@@ -200,9 +198,6 @@ func (b *Bridge) Chat(prompt, sessionID string, eventCh chan<- Event) (*StreamRe
 
 // CallCodex calls a specific codex role
 func (b *Bridge) CallCodex(role, prompt string, eventCh chan<- Event) (*StreamResult, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
 	req := CodexRequest{
 		Action: "codex",
 		Role:   role,
@@ -213,10 +208,30 @@ func (b *Bridge) CallCodex(role, prompt string, eventCh chan<- Event) (*StreamRe
 	return b.runSDK(req, eventCh)
 }
 
+// Cancel kills the current SDK subprocess if running
+func (b *Bridge) Cancel() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.currentCmd != nil && b.currentCmd.Process != nil {
+		b.currentCmd.Process.Kill()
+		b.currentCmd = nil
+	}
+}
+
 // runSDK executes the SDK subprocess
 func (b *Bridge) runSDK(request any, eventCh chan<- Event) (*StreamResult, error) {
 	cmd := exec.Command("node", b.sdkPath)
 	cmd.Dir, _ = os.Getwd()
+
+	b.mu.Lock()
+	b.currentCmd = cmd
+	b.mu.Unlock()
+
+	defer func() {
+		b.mu.Lock()
+		b.currentCmd = nil
+		b.mu.Unlock()
+	}()
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -273,9 +288,11 @@ func (b *Bridge) runSDK(request any, eventCh chan<- Event) (*StreamResult, error
 			continue
 		}
 
-		// Send to channel if provided
 		if eventCh != nil {
-			eventCh <- event
+			select {
+			case eventCh <- event:
+			default:
+			}
 		}
 
 		// Accumulate result

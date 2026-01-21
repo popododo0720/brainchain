@@ -258,6 +258,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case tea.KeyEsc:
 			if m.streaming {
+				if m.bridge != nil {
+					m.bridge.Cancel()
+				}
 				if m.streamCancel != nil {
 					close(m.streamCancel)
 					m.streamCancel = nil
