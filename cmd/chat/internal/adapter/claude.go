@@ -46,12 +46,6 @@ func (a *ClaudeAdapter) BuildCommand(prompt string, opts map[string]any) []strin
 		cmd = append(cmd, "--model", model)
 	}
 
-	if effort, ok := opts["effort"].(string); ok && effort != "" {
-		cmd = append(cmd, "--effort", effort)
-	} else if effort, ok := a.Cfg.Extra["effort"].(string); ok && effort != "" {
-		cmd = append(cmd, "--effort", effort)
-	}
-
 	if tools, ok := opts["allowed_tools"].(string); ok && tools != "" {
 		cmd = append(cmd, "--allowedTools", tools)
 	} else if tools, ok := a.Cfg.Extra["allowed_tools"].(string); ok && tools != "" {
