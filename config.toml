@@ -22,65 +22,67 @@ args = ["--full-auto", "--skip-git-repo-check"]
 command = "gemini"
 args = ["--sandbox"]
 
-# === Task Agents (role 실행용) ===
-# --exec, --parallel, --workflow에서 사용
+# === Base Templates (prefix with _ to indicate template) ===
+# 템플릿은 직접 사용하지 않고 extends로 상속받아 사용
+
+[agents._claude-task]
+command = "claude"
+args = ["-p", "{prompt}", "--print", "--permission-mode", "acceptEdits"]
+timeout = 300
+
+[agents._codex-task]
+command = "codex"
+args = ["exec", "{prompt}", "--full-auto", "--skip-git-repo-check"]
+timeout = 300
+
+# === Task Agents (extends 사용) ===
 
 [agents.claude-opus-high]
-command = "claude"
+extends = "_claude-task"
 model = "opus"
-args = ["-p", "{prompt}", "--print", "--permission-mode", "acceptEdits"]
 timeout = 600
 
 [agents.claude-opus]
-command = "claude"
+extends = "_claude-task"
 model = "opus"
-args = ["-p", "{prompt}", "--print", "--permission-mode", "acceptEdits"]
-timeout = 300
 
 [agents.claude-opus-low]
-command = "claude"
+extends = "_claude-task"
 model = "opus"
-args = ["-p", "{prompt}", "--print", "--permission-mode", "acceptEdits"]
 timeout = 120
 
 [agents.claude-sonnet]
-command = "claude"
+extends = "_claude-task"
 model = "sonnet"
-args = ["-p", "{prompt}", "--print", "--permission-mode", "acceptEdits"]
-timeout = 300
 
 [agents.claude-haiku]
-command = "claude"
+extends = "_claude-task"
 model = "haiku"
-args = ["-p", "{prompt}", "--print", "--permission-mode", "acceptEdits"]
 timeout = 60
 
 [agents.claude-haiku-web]
-command = "claude"
+extends = "_claude-task"
 model = "haiku"
 args = ["-p", "{prompt}", "--print", "--permission-mode", "acceptEdits", "--allowedTools", "WebSearch,WebFetch"]
 timeout = 90
 
 [agents.claude-web]
-command = "claude"
+extends = "_claude-task"
 model = "opus"
 args = ["-p", "{prompt}", "--print", "--permission-mode", "acceptEdits", "--allowedTools", "WebSearch,WebFetch"]
 timeout = 600
 
 [agents.codex-exec]
-command = "codex"
+extends = "_codex-task"
 model = "gpt-5.2"
-args = ["exec", "{prompt}", "--full-auto", "--skip-git-repo-check"]
-timeout = 300
 
 [agents.codex-gpt5]
-command = "codex"
+extends = "_codex-task"
 model = "gpt-5.2"
 args = ["exec", "{prompt}", "--full-auto", "--skip-git-repo-check", "-c", "model_reasoning_effort=\"high\""]
-timeout = 300
 
 [agents.codex-coder]
-command = "codex"
+extends = "_codex-task"
 model = "gpt-5.2-codex"
 args = ["exec", "{prompt}", "--full-auto", "--skip-git-repo-check", "-c", "model_reasoning_effort=\"high\""]
 timeout = 600

@@ -25,11 +25,13 @@ type OrchestratorConfig struct {
 }
 
 type AgentConfig struct {
-	Command         string   `toml:"command"`
+	Extends         string   `toml:"extends,omitempty"`
+	Command         string   `toml:"command,omitempty"`
 	Model           string   `toml:"model,omitempty"`
 	Args            []string `toml:"args,omitempty"`
 	Timeout         int      `toml:"timeout,omitempty"`
 	ReasoningEffort string   `toml:"reasoning_effort,omitempty"`
+	AllowedTools    string   `toml:"allowed_tools,omitempty"`
 }
 
 type RoleConfig struct {
@@ -128,11 +130,17 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("orchestrator agent '%s' not defined in agents", c.Orchestrator.Agent)
 	}
 
+	// Validate extends references before resolving
 	for name, agent := range c.Agents {
-		if agent.Command == "" {
-			return fmt.Errorf("agents.%s.command is required", name)
+		if agent.Extends != "" {
+			if _, ok := c.Agents[agent.Extends]; !ok {
+				return fmt.Errorf("agents.%s extends unknown agent '%s'", name, agent.Extends)
+			}
 		}
 	}
+
+	// Note: command validation happens after ApplyDefaults resolves inheritance
+	// So we skip command validation here for agents with extends
 
 	for name, role := range c.Roles {
 		if role.Agent == "" {
@@ -147,6 +155,9 @@ func (c *Config) Validate() error {
 }
 
 func (c *Config) ApplyDefaults() {
+	// First, resolve agent inheritance
+	c.resolveAgentInheritance()
+
 	if c.RetryPolicy.MaxRetries == 0 {
 		c.RetryPolicy.MaxRetries = 3
 	}
@@ -169,6 +180,58 @@ func (c *Config) ApplyDefaults() {
 			c.Agents[name] = agent
 		}
 	}
+}
+
+// resolveAgentInheritance resolves the extends field for all agents
+func (c *Config) resolveAgentInheritance() {
+	// Iterate until all inheritance is resolved (handles chains)
+	for i := 0; i < 10; i++ { // Max depth to prevent infinite loops
+		changed := false
+		for name, agent := range c.Agents {
+			if agent.Extends == "" {
+				continue
+			}
+			parent, ok := c.Agents[agent.Extends]
+			if !ok {
+				continue // Will be caught in validation
+			}
+
+			// Merge parent into child (child overrides parent)
+			merged := agent.mergeWith(parent)
+			merged.Extends = "" // Clear after resolution
+			c.Agents[name] = merged
+			changed = true
+		}
+		if !changed {
+			break
+		}
+	}
+}
+
+// mergeWith merges parent config into this config (this config takes precedence)
+func (a AgentConfig) mergeWith(parent AgentConfig) AgentConfig {
+	result := parent // Start with parent values
+
+	if a.Command != "" {
+		result.Command = a.Command
+	}
+	if a.Model != "" {
+		result.Model = a.Model
+	}
+	if len(a.Args) > 0 {
+		result.Args = a.Args
+	}
+	if a.Timeout != 0 {
+		result.Timeout = a.Timeout
+	}
+	if a.ReasoningEffort != "" {
+		result.ReasoningEffort = a.ReasoningEffort
+	}
+	if a.AllowedTools != "" {
+		result.AllowedTools = a.AllowedTools
+	}
+
+	return result
 }
 
 func LoadPrompts(config *Config, baseDir string) (map[string]string, error) {
