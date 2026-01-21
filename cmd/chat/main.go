@@ -11,6 +11,7 @@ import (
 
 	"brainchain/cmd/chat/internal/config"
 	"brainchain/cmd/chat/internal/executor"
+	"brainchain/cmd/chat/internal/lsp"
 	"brainchain/cmd/chat/internal/session"
 	"brainchain/cmd/chat/internal/workflow"
 )
@@ -25,6 +26,7 @@ func main() {
 		workflowFlag = flag.Bool("workflow", false, "Run complete workflow")
 		sessionsFlag = flag.Bool("sessions", false, "List sessions")
 		sessionInfo  = flag.String("session-info", "", "Show session details")
+		lspMCPFlag   = flag.Bool("lsp-mcp", false, "Run as LSP MCP server (stdio)")
 
 		cwdFlag      = flag.String("cwd", "", "Working directory")
 		jsonFlag     = flag.Bool("json", false, "Output as JSON")
@@ -64,6 +66,16 @@ Examples:
 	cwd := *cwdFlag
 	if cwd == "" {
 		cwd, _ = os.Getwd()
+	}
+
+	if *lspMCPFlag {
+		server := lsp.NewMCPServer(cwd)
+		defer server.Close()
+		if err := server.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "LSP MCP server error: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	if !*listFlag && *execRole == "" && *parallelFile == "" && !*workflowFlag && !*sessionsFlag && *sessionInfo == "" {

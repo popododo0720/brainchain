@@ -12,6 +12,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/brainchain"
 BIN_DIR="$HOME/.local/bin"
+LSP_DIR="$CONFIG_DIR/lsp-servers"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -124,14 +125,21 @@ setup_claude_code() {
     local claude_dir="$SCRIPT_DIR/.claude"
     mkdir -p "$claude_dir"
 
-    cat > "$claude_dir/settings.local.json" << 'EOF'
+    cat > "$claude_dir/settings.local.json" << EOF
 {
   "permissions": {
     "allow": ["*"]
+  },
+  "mcpServers": {
+    "brainchain-lsp": {
+      "command": "$BIN_DIR/brainchain",
+      "args": ["--lsp-mcp"],
+      "env": {}
+    }
   }
 }
 EOF
-    success "Created .claude/settings.local.json"
+    success "Created .claude/settings.local.json with LSP MCP server"
 
     generate_claude_md
 }
@@ -170,6 +178,7 @@ install() {
 
     setup_claude_code
     init_config
+    install_lsp_servers
 
     echo ""
     step "Verifying installation..."
@@ -215,10 +224,94 @@ uninstall() {
         success "Removed CLAUDE.md"
     fi
 
+    if [ -d "$LSP_DIR" ]; then
+        rm -rf "$LSP_DIR"
+        success "Removed LSP servers"
+    fi
+
     echo ""
     echo "Config preserved at: $CONFIG_DIR"
     echo "To remove config: rm -rf $CONFIG_DIR"
     echo "To remove .claude: rm -rf $SCRIPT_DIR/.claude"
+}
+
+install_lsp_servers() {
+    step "Installing LSP servers..."
+    mkdir -p "$LSP_DIR"
+
+    local os=$(uname -s | tr '[:upper:]' '[:lower:]')
+    local arch=$(uname -m)
+    
+    case "$arch" in
+        x86_64) arch="amd64" ;;
+        aarch64|arm64) arch="arm64" ;;
+    esac
+
+    if command -v gopls &> /dev/null; then
+        info "gopls already installed (system)"
+    else
+        step "Installing gopls..."
+        if command -v go &> /dev/null; then
+            GOBIN="$LSP_DIR" go install golang.org/x/tools/gopls@latest 2>/dev/null && \
+                success "Installed gopls" || warn "Failed to install gopls"
+        else
+            warn "Go not found, skipping gopls"
+        fi
+    fi
+
+    if command -v rust-analyzer &> /dev/null; then
+        info "rust-analyzer already installed (system)"
+    elif [ -f "$LSP_DIR/rust-analyzer" ]; then
+        info "rust-analyzer already installed"
+    else
+        step "Installing rust-analyzer..."
+        local ra_url=""
+        case "${os}_${arch}" in
+            linux_amd64)  ra_url="https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-x86_64-unknown-linux-gnu.gz" ;;
+            linux_arm64)  ra_url="https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-aarch64-unknown-linux-gnu.gz" ;;
+            darwin_amd64) ra_url="https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-x86_64-apple-darwin.gz" ;;
+            darwin_arm64) ra_url="https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-aarch64-apple-darwin.gz" ;;
+        esac
+        if [ -n "$ra_url" ]; then
+            curl -sL "$ra_url" | gunzip > "$LSP_DIR/rust-analyzer" 2>/dev/null && \
+                chmod +x "$LSP_DIR/rust-analyzer" && \
+                success "Installed rust-analyzer" || warn "Failed to install rust-analyzer"
+        else
+            warn "rust-analyzer not available for ${os}_${arch}"
+        fi
+    fi
+
+    if command -v clangd &> /dev/null; then
+        info "clangd already installed (system)"
+    else
+        warn "clangd not bundled, install via system package manager"
+        echo "  Ubuntu/Debian: sudo apt install clangd"
+        echo "  macOS: brew install llvm"
+    fi
+
+    if command -v node &> /dev/null; then
+        step "Installing npm-based LSP servers..."
+        local npm_lsp_dir="$LSP_DIR/node_modules"
+        mkdir -p "$npm_lsp_dir"
+        
+        if ! command -v typescript-language-server &> /dev/null; then
+            npm install --prefix "$LSP_DIR" typescript-language-server typescript 2>/dev/null && \
+                success "Installed typescript-language-server" || warn "Failed to install typescript-language-server"
+        else
+            info "typescript-language-server already installed"
+        fi
+
+        if ! command -v pyright-langserver &> /dev/null && ! [ -f "$LSP_DIR/node_modules/.bin/pyright-langserver" ]; then
+            npm install --prefix "$LSP_DIR" pyright 2>/dev/null && \
+                success "Installed pyright" || warn "Failed to install pyright"
+        else
+            info "pyright already installed"
+        fi
+    else
+        warn "Node.js not found, skipping npm-based LSP servers"
+    fi
+
+    success "LSP servers installed to $LSP_DIR"
 }
 
 init_config() {

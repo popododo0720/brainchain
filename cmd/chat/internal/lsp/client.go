@@ -392,3 +392,141 @@ func (c *Client) Diagnostics(uri string) ([]Diagnostic, error) {
 	json.Unmarshal(result, &resp)
 	return resp.Items, nil
 }
+
+type HoverResult struct {
+	Contents string `json:"contents"`
+	Range    *Range `json:"range,omitempty"`
+}
+
+func (c *Client) Hover(uri string, line, character int) (*HoverResult, error) {
+	if !c.connected {
+		return nil, fmt.Errorf("not connected")
+	}
+
+	if len(uri) < 7 || uri[:7] != "file://" {
+		uri = c.fileURI(uri)
+	}
+
+	params := map[string]any{
+		"textDocument": map[string]any{"uri": uri},
+		"position":     map[string]any{"line": line, "character": character},
+	}
+
+	result, err := c.sendRequest("textDocument/hover", params)
+	if err != nil {
+		return nil, err
+	}
+
+	if result == nil || string(result) == "null" {
+		return nil, nil
+	}
+
+	var hover struct {
+		Contents any    `json:"contents"`
+		Range    *Range `json:"range,omitempty"`
+	}
+	if err := json.Unmarshal(result, &hover); err != nil {
+		return nil, err
+	}
+
+	var contents string
+	switch v := hover.Contents.(type) {
+	case string:
+		contents = v
+	case map[string]any:
+		if val, ok := v["value"].(string); ok {
+			contents = val
+		}
+	case []any:
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				contents += s + "\n"
+			} else if m, ok := item.(map[string]any); ok {
+				if val, ok := m["value"].(string); ok {
+					contents += val + "\n"
+				}
+			}
+		}
+	}
+
+	return &HoverResult{Contents: contents, Range: hover.Range}, nil
+}
+
+type Symbol struct {
+	Name          string   `json:"name"`
+	Kind          int      `json:"kind"`
+	Location      Location `json:"location,omitempty"`
+	ContainerName string   `json:"containerName,omitempty"`
+}
+
+func (c *Client) DocumentSymbols(uri string) ([]Symbol, error) {
+	if !c.connected {
+		return nil, fmt.Errorf("not connected")
+	}
+
+	if len(uri) < 7 || uri[:7] != "file://" {
+		uri = c.fileURI(uri)
+	}
+
+	params := map[string]any{
+		"textDocument": map[string]any{"uri": uri},
+	}
+
+	result, err := c.sendRequest("textDocument/documentSymbol", params)
+	if err != nil {
+		return nil, err
+	}
+
+	var symbols []Symbol
+	json.Unmarshal(result, &symbols)
+	return symbols, nil
+}
+
+func (c *Client) WorkspaceSymbols(query string) ([]Symbol, error) {
+	if !c.connected {
+		return nil, fmt.Errorf("not connected")
+	}
+
+	params := map[string]any{
+		"query": query,
+	}
+
+	result, err := c.sendRequest("workspace/symbol", params)
+	if err != nil {
+		return nil, err
+	}
+
+	var symbols []Symbol
+	json.Unmarshal(result, &symbols)
+	return symbols, nil
+}
+
+func (c *Client) PrepareRename(uri string, line, character int) (*Range, error) {
+	if !c.connected {
+		return nil, fmt.Errorf("not connected")
+	}
+
+	if len(uri) < 7 || uri[:7] != "file://" {
+		uri = c.fileURI(uri)
+	}
+
+	params := map[string]any{
+		"textDocument": map[string]any{"uri": uri},
+		"position":     map[string]any{"line": line, "character": character},
+	}
+
+	result, err := c.sendRequest("textDocument/prepareRename", params)
+	if err != nil {
+		return nil, err
+	}
+
+	if result == nil || string(result) == "null" {
+		return nil, nil
+	}
+
+	var r Range
+	if err := json.Unmarshal(result, &r); err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
